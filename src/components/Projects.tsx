@@ -98,7 +98,7 @@ const Projects: React.FC = () => {
                   </p>
                 </div>
                 <span className={`inline-flex px-2.5 py-1 text-xs font-semibold rounded-full ${getStatusColor(transaction.status)}`}>
-                  {t(`status.${transaction.status.toLowerCase().replace(' ', '')}`)}
+                  {t(`status.${transaction.status.toLowerCase().replace(' ', '_')}`)}
                 </span>
               </div>
 

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Globe, Menu } from 'lucide-react';
 import { useLanguage } from '../hooks/useLanguage';
+import logoTm from '../assets/logo-tm.svg';
 import {
   Navbar,
   NavbarLogo,
@@ -31,7 +32,7 @@ const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange }) => {
   return (
     <Navbar>
       <div className="flex items-center">
-        <NavbarLogo src="" alt="TransparensiMY">TransparensiMY</NavbarLogo>
+        <NavbarLogo src={logoTm} alt="TransparensiMY">TransparensiMY</NavbarLogo>
       </div>
       <NavbarMenu>
         {menuItems.map((item) => (
@@ -42,7 +43,7 @@ const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange }) => {
               e.preventDefault();
               onTabChange(item.id);
             }}
-            className={activeTab === item.id ? 'bg-blue-600 text-white' : ''}
+            className={activeTab === item.id ? 'bg-blue-100 text-blue-600' : ''}
           >
             {item.label}
           </NavbarMenuItem>
