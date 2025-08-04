@@ -1,53 +1,79 @@
 import React from 'react';
-import { Globe, Shield, Menu } from 'lucide-react';
+import { Globe, Menu } from 'lucide-react';
 import { useLanguage } from '../hooks/useLanguage';
+import {
+  Navbar,
+  NavbarLogo,
+  NavbarAction,
+  NavbarMenu,
+  NavbarMenuItem,
+} from "@govtechmy/myds-react/navbar";
+import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from '@govtechmy/myds-react/select';
+import { Button, ButtonIcon } from '@govtechmy/myds-react/button';
+import { BarChart3, FileText, Building2, TrendingUp, Settings } from 'lucide-react';
 
 interface HeaderProps {
-  onMenuToggle: () => void;
+  activeTab: string;
+  onTabChange: (tab: string) => void;
 }
 
-const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
-  const { currentLanguage, languages, switchLanguage } = useLanguage();
+const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange }) => {
+  const { t, currentLanguage, languages, switchLanguage } = useLanguage();
+
+  const menuItems = [
+    { id: 'dashboard', icon: BarChart3, label: t('nav.dashboard') },
+    { id: 'projects', icon: FileText, label: t('nav.projects') },
+    { id: 'departments', icon: Building2, label: t('nav.departments') },
+    { id: 'analytics', icon: TrendingUp, label: t('nav.analytics') },
+    { id: 'admin', icon: Settings, label: t('nav.admin') }
+  ];
 
   return (
-    <header className="bg-white text-gray-800 shadow-md">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between items-center h-16">
-          <div className="flex items-center">
-            <button
-              onClick={onMenuToggle}
-              className="md:hidden p-2 rounded-md text-gray-600 hover:bg-gray-100 transition-colors"
-            >
-              <Menu className="h-6 w-6" />
-            </button>
-            <div className="flex items-center space-x-3">
-              <Shield className="h-6 w-6 text-blue-600" />
-              <div>
-                <h1 className="text-xl font-bold">TransparensiMY</h1>
-                <p className="text-xs text-gray-600">Blockchain Government Transparency</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center space-x-4">
-            <div className="flex items-center space-x-2">
-              <Globe className="h-4 w-4 text-gray-600" />
-              <select
-                value={currentLanguage.code}
-                onChange={(e) => switchLanguage(e.target.value as 'en' | 'ms')}
-                className="bg-gray-100 border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                {languages.map((lang) => (
-                  <option key={lang.code} value={lang.code}>
-                    {lang.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-        </div>
+    <Navbar>
+      <div className="flex items-center">
+        <NavbarLogo src="" alt="TransparensiMY">TransparensiMY</NavbarLogo>
       </div>
-    </header>
+      <NavbarMenu>
+        {menuItems.map((item) => (
+          <NavbarMenuItem
+            key={item.id}
+            href="#"
+            onClick={(e) => {
+              e.preventDefault();
+              onTabChange(item.id);
+            }}
+            className={activeTab === item.id ? 'bg-blue-600 text-white' : ''}
+          >
+            {item.label}
+          </NavbarMenuItem>
+        ))}
+      </NavbarMenu>
+      <NavbarAction>
+        <div className="hidden sm:block">
+          <Select
+            value={currentLanguage.code}
+            onValueChange={(value) => switchLanguage(value as 'en' | 'ms')}
+            variant="outline"
+            size="small"
+          >
+            <SelectTrigger aria-label="language-selection">
+              <Globe className="h-4 w-4"></Globe>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent
+              align="end"
+              className="font-body rounded-[4px] py-1"
+            >
+              {languages.map((lang) => (
+                <SelectItem key={lang.code} value={lang.code}>
+                  {lang.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </NavbarAction>
+    </Navbar>
   );
 };
 

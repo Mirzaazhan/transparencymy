@@ -1,8 +1,10 @@
 import React from 'react';
-import { TrendingUp, TrendingDown, BarChart3, PieChart } from 'lucide-react';
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart as RechartsPieChart, Pie, Cell, BarChart, Bar } from 'recharts';
 import { mockTransactions, mockDepartments } from '../data/mockData';
 import { useLanguage } from '../hooks/useLanguage';
+import { ArrowUpIcon, ArrowDownIcon, InfoIcon } from '@govtechmy/myds-react/icon';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@govtechmy/myds-react/table';
+import { Tag } from '@govtechmy/myds-react/tag';
 
 const Analytics: React.FC = () => {
   const { t } = useLanguage();
@@ -66,46 +68,46 @@ const Analytics: React.FC = () => {
 
       {/* Key Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-        <div className="bg-white rounded-lg shadow-sm p-6">
+        <div className="bg-white rounded-lg shadow-card p-6">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-500">Total Spending (6M)</p>
               <p className="text-3xl font-bold text-gray-800">{formatCurrency(totalSpending)}</p>
             </div>
             <div className="p-4 bg-blue-100 rounded-full">
-              <BarChart3 className="h-7 w-7 text-blue-500" />
+              <InfoIcon className="h-7 w-7 text-blue-500" />
             </div>
           </div>
           <p className="mt-4 text-sm text-gray-500">Average: {formatCurrency(avgMonthlySpending)}/month</p>
         </div>
 
-        <div className="bg-white rounded-lg shadow-sm p-6">
+        <div className="bg-white rounded-lg shadow-card p-6">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-500">Monthly Growth</p>
               <p className="text-3xl font-bold text-gray-800">{monthlyGrowth.toFixed(1)}%</p>
             </div>
             <div className="p-4 bg-green-100 rounded-full">
-              <TrendingUp className="h-7 w-7 text-green-500" />
+              <ArrowUpIcon className="h-7 w-7 text-green-500" />
             </div>
           </div>
           <p className="mt-4 text-sm text-green-500 font-medium">vs Previous Month</p>
         </div>
 
-        <div className="bg-white rounded-lg shadow-sm p-6">
+        <div className="bg-white rounded-lg shadow-card p-6">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-500">Active Projects</p>
               <p className="text-3xl font-bold text-gray-800">{mockTransactions.filter(t => t.status === 'In Progress').length}</p>
             </div>
             <div className="p-4 bg-yellow-100 rounded-full">
-              <PieChart className="h-7 w-7 text-yellow-500" />
+              <InfoIcon className="h-7 w-7 text-yellow-500" />
             </div>
           </div>
           <p className="mt-4 text-sm text-gray-500">Across {mockDepartments.length} Departments</p>
         </div>
 
-        <div className="bg-white rounded-lg shadow-sm p-6">
+        <div className="bg-white rounded-lg shadow-card p-6">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-500">Avg Project Value</p>
@@ -114,7 +116,7 @@ const Analytics: React.FC = () => {
               </p>
             </div>
             <div className="p-4 bg-purple-100 rounded-full">
-              <TrendingDown className="h-7 w-7 text-purple-500" />
+              <ArrowDownIcon className="h-7 w-7 text-purple-500" />
             </div>
           </div>
           <p className="mt-4 text-sm text-gray-500">Per Project</p>
@@ -123,7 +125,7 @@ const Analytics: React.FC = () => {
 
       {/* Charts Row 1 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <div className="bg-white rounded-lg shadow-sm p-8">
+        <div className="bg-white rounded-lg shadow-card p-8">
           <h3 className="text-xl font-bold text-gray-800 mb-6">Monthly Spending Trend</h3>
           <ResponsiveContainer width="100%" height={350}>
             <AreaChart data={monthlySpending}>
@@ -142,7 +144,7 @@ const Analytics: React.FC = () => {
           </ResponsiveContainer>
         </div>
 
-        <div className="bg-white rounded-lg shadow-sm p-8">
+        <div className="bg-white rounded-lg shadow-card p-8">
           <h3 className="text-xl font-bold text-gray-800 mb-6">Project Status Distribution</h3>
           <ResponsiveContainer width="100%" height={350}>
             <RechartsPieChart>
@@ -159,7 +161,7 @@ const Analytics: React.FC = () => {
 
       {/* Charts Row 2 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <div className="bg-white rounded-lg shadow-sm p-8">
+        <div className="bg-white rounded-lg shadow-card p-8">
           <h3 className="text-xl font-bold text-gray-800 mb-6">Department Budget Efficiency</h3>
           <ResponsiveContainer width="100%" height={350}>
             <BarChart data={departmentEfficiency} layout="vertical">
@@ -172,7 +174,7 @@ const Analytics: React.FC = () => {
           </ResponsiveContainer>
         </div>
 
-        <div className="bg-white rounded-lg shadow-sm p-8">
+        <div className="bg-white rounded-lg shadow-card p-8">
           <h3 className="text-xl font-bold text-gray-800 mb-6">Spending by Location</h3>
           <ResponsiveContainer width="100%" height={350}>
             <BarChart data={locationSpending}>
@@ -187,63 +189,74 @@ const Analytics: React.FC = () => {
       </div>
 
       {/* Detailed Analytics Table */}
-      <div className="bg-white rounded-lg shadow-sm p-8">
+      <div className="bg-white rounded-lg shadow-card p-8">
         <h3 className="text-xl font-bold text-gray-800 mb-6">Detailed Project Analytics</h3>
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-100">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Project</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Department</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Budget Utilization</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">ROI Score</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Risk Level</th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Project</TableHead>
+                <TableHead>Department</TableHead>
+                <TableHead>Budget Utilization</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>ROI Score</TableHead>
+                <TableHead>Risk Level</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {mockTransactions.map((transaction) => {
                 const utilization = (transaction.amountSpent / transaction.budgetAllocated) * 100;
                 const roiScore = Math.floor(Math.random() * 40) + 60;
                 const riskLevel = utilization > 90 ? 'High' : utilization > 70 ? 'Medium' : 'Low';
                 
                 return (
-                  <tr key={transaction.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap">
+                  <TableRow key={transaction.id}>
+                    <TableCell>
                       <div className="text-sm font-medium text-gray-800">{transaction.projectName}</div>
                       <div className="text-sm text-gray-500">{transaction.location}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                      {transaction.department.replace('Ministry of ', '')}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    </TableCell>
+                    <TableCell>{transaction.department.replace('Ministry of ', '')}</TableCell>
+                    <TableCell>
                       <div className="flex items-center">
                         <div className="w-20 bg-gray-200 rounded-full h-2.5 mr-3">
                           <div className={`h-2.5 rounded-full ${utilization > 90 ? 'bg-red-500' : utilization > 75 ? 'bg-yellow-500' : 'bg-green-500'}`} style={{ width: `${utilization}%` }} />
                         </div>
                         <span className="text-sm font-semibold text-gray-800">{utilization.toFixed(1)}%</span>
                       </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`inline-flex px-2.5 py-1 text-xs font-semibold rounded-full ${transaction.status === 'Completed' ? 'bg-green-100 text-green-800' : transaction.status === 'In Progress' ? 'bg-yellow-100 text-yellow-800' : transaction.status === 'Planned' ? 'bg-blue-100 text-blue-800' : 'bg-red-100 text-red-800'}`}>
+                    </TableCell>
+                    <TableCell>
+                      <Tag
+                        variant={
+                          transaction.status === 'Completed' ? 'success' :
+                          transaction.status === 'In Progress' ? 'warning' :
+                          transaction.status === 'Planned' ? 'primary' :
+                          'danger'
+                        }
+                      >
                         {transaction.status}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                      </Tag>
+                    </TableCell>
+                    <TableCell>
                       <div className="flex items-center">
                         <span className="text-sm font-semibold text-gray-800">{roiScore}/100</span>
                       </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`inline-flex px-2.5 py-1 text-xs font-semibold rounded-full ${riskLevel === 'High' ? 'bg-red-100 text-red-800' : riskLevel === 'Medium' ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'}`}>
+                    </TableCell>
+                    <TableCell>
+                      <Tag
+                        variant={
+                          riskLevel === 'High' ? 'danger' :
+                          riskLevel === 'Medium' ? 'warning' :
+                          'success'
+                        }
+                      >
                         {riskLevel}
-                      </span>
-                    </td>
-                  </tr>
+                      </Tag>
+                    </TableCell>
+                  </TableRow>
                 );
               })}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       </div>
     </div>

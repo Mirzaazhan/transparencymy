@@ -1,8 +1,10 @@
 import React from 'react';
-import { TrendingUp, TrendingDown, Activity, CheckCircle } from 'lucide-react';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
 import { mockTransactions, mockDepartments } from '../data/mockData';
 import { useLanguage } from '../hooks/useLanguage';
+import { ArrowUpIcon, ArrowDownIcon, InfoIcon, CheckCircleIcon } from '@govtechmy/myds-react/icon';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@govtechmy/myds-react/table';
+import { Tag } from '@govtechmy/myds-react/tag';
 
 const Dashboard: React.FC = () => {
   const { t } = useLanguage();
@@ -53,14 +55,14 @@ const Dashboard: React.FC = () => {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="bg-white rounded-lg shadow-sm p-6">
+        <div className="bg-white rounded-lg shadow-card p-6">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-500">{t('dashboard.totalSpent')}</p>
               <p className="text-2xl font-bold text-gray-800">{formatCurrency(totalSpent)}</p>
             </div>
             <div className="p-3 bg-red-100 rounded-full">
-              <TrendingUp className="h-6 w-6 text-red-500" />
+              <ArrowUpIcon className="h-6 w-6 text-red-500" />
             </div>
           </div>
           <div className="mt-4 flex items-center">
@@ -69,14 +71,14 @@ const Dashboard: React.FC = () => {
           </div>
         </div>
 
-        <div className="bg-white rounded-lg shadow-sm p-6">
+        <div className="bg-white rounded-lg shadow-card p-6">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-500">{t('dashboard.totalBudget')}</p>
               <p className="text-2xl font-bold text-gray-800">{formatCurrency(totalBudget)}</p>
             </div>
             <div className="p-3 bg-blue-100 rounded-full">
-              <TrendingDown className="h-6 w-6 text-blue-500" />
+              <ArrowDownIcon className="h-6 w-6 text-blue-500" />
             </div>
           </div>
           <div className="mt-4 flex items-center">
@@ -87,14 +89,14 @@ const Dashboard: React.FC = () => {
           </div>
         </div>
 
-        <div className="bg-white rounded-lg shadow-sm p-6">
+        <div className="bg-white rounded-lg shadow-card p-6">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-500">{t('dashboard.activeProjects')}</p>
               <p className="text-2xl font-bold text-gray-800">{activeProjects}</p>
             </div>
             <div className="p-3 bg-yellow-100 rounded-full">
-              <Activity className="h-6 w-6 text-yellow-500" />
+              <InfoIcon className="h-6 w-6 text-yellow-500" />
             </div>
           </div>
           <div className="mt-4 flex items-center">
@@ -102,14 +104,14 @@ const Dashboard: React.FC = () => {
           </div>
         </div>
 
-        <div className="bg-white rounded-lg shadow-sm p-6">
+        <div className="bg-white rounded-lg shadow-card p-6">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-500">{t('dashboard.completedProjects')}</p>
               <p className="text-2xl font-bold text-gray-800">{completedProjects}</p>
             </div>
             <div className="p-3 bg-green-100 rounded-full">
-              <CheckCircle className="h-6 w-6 text-green-500" />
+              <CheckCircleIcon className="h-6 w-6 text-green-500" />
             </div>
           </div>
           <div className="mt-4 flex items-center">
@@ -121,7 +123,7 @@ const Dashboard: React.FC = () => {
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Department Spending */}
-        <div className="bg-white rounded-lg shadow-sm p-6">
+        <div className="bg-white rounded-lg shadow-card p-6">
           <h3 className="text-lg font-semibold text-gray-800 mb-4">Department Spending</h3>
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={departmentData}>
@@ -139,7 +141,7 @@ const Dashboard: React.FC = () => {
         </div>
 
         {/* Spending Distribution */}
-        <div className="bg-white rounded-lg shadow-sm p-6">
+        <div className="bg-white rounded-lg shadow-card p-6">
           <h3 className="text-lg font-semibold text-gray-800 mb-4">Spending Distribution</h3>
           <ResponsiveContainer width="100%" height={300}>
             <PieChart>
@@ -167,7 +169,7 @@ const Dashboard: React.FC = () => {
       </div>
 
       {/* Spending Trend */}
-      <div className="bg-white rounded-lg shadow-sm p-6">
+      <div className="bg-white rounded-lg shadow-card p-6">
         <h3 className="text-lg font-semibold text-gray-800 mb-4">Monthly Spending Trend</h3>
         <ResponsiveContainer width="100%" height={300}>
           <LineChart data={spendingTrend}>
@@ -184,59 +186,45 @@ const Dashboard: React.FC = () => {
       </div>
 
       {/* Recent Transactions */}
-      <div className="bg-white rounded-lg shadow-sm p-6">
+      <div className="bg-white rounded-lg shadow-card p-6">
         <h3 className="text-lg font-semibold text-gray-800 mb-4">Recent Transactions</h3>
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-100">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Project
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Department
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Amount
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Status
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Date
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Project</TableHead>
+                <TableHead>Department</TableHead>
+                <TableHead>Amount</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Date</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {mockTransactions.slice(0, 5).map((transaction) => (
-                <tr key={transaction.id} className="hover:bg-gray-100">
-                  <td className="px-6 py-4 whitespace-nowrap">
+                <TableRow key={transaction.id}>
+                  <TableCell>
                     <div className="text-sm font-medium text-gray-800">{transaction.projectName}</div>
                     <div className="text-sm text-gray-500">{transaction.location}</div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-800">
-                    {transaction.department}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-800">
-                    {formatCurrency(transaction.amount)}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                      transaction.status === 'Completed' ? 'bg-green-100 text-green-700' :
-                      transaction.status === 'In Progress' ? 'bg-yellow-100 text-yellow-700' :
-                      transaction.status === 'Planned' ? 'bg-blue-100 text-blue-700' :
-                      'bg-red-100 text-red-700'
-                    }`}>
+                  </TableCell>
+                  <TableCell>{transaction.department}</TableCell>
+                  <TableCell>{formatCurrency(transaction.amount)}</TableCell>
+                  <TableCell>
+                    <Tag
+                      variant={
+                        transaction.status === 'Completed' ? 'success' :
+                        transaction.status === 'In Progress' ? 'warning' :
+                        transaction.status === 'Planned' ? 'primary' :
+                        'danger'
+                      }
+                    >
                       {transaction.status}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {new Date(transaction.date).toLocaleDateString()}
-                  </td>
-                </tr>
+                    </Tag>
+                  </TableCell>
+                  <TableCell>{new Date(transaction.date).toLocaleDateString()}</TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       </div>
     </div>

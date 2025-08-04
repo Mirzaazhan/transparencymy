@@ -86,7 +86,7 @@ const Projects: React.FC = () => {
       {/* Projects Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
         {filteredTransactions.map((transaction) => (
-          <div key={transaction.id} className="bg-white rounded-lg shadow-sm overflow-hidden hover:shadow-lg transition-shadow duration-300">
+          <div key={transaction.id} className="bg-white rounded-lg shadow-card overflow-hidden hover:shadow-lg transition-shadow duration-300">
             <div className="p-6">
               <div className="flex justify-between items-start mb-4">
                 <div className="flex-1 pr-4">

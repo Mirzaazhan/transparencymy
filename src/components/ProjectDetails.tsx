@@ -1,7 +1,10 @@
 import React from 'react';
-import { ArrowLeft, MapPin, Calendar, DollarSign, Hash, ExternalLink, CheckCircle, Check } from 'lucide-react';
 import { Transaction } from '../types';
 import { useLanguage } from '../hooks/useLanguage';
+import { ArrowBackIcon, MapIcon, CalendarIcon, MoneyIcon, InfoIcon, LinkIcon, CheckCircleIcon, CheckIcon } from '@govtechmy/myds-react/icon';
+import { Button } from '@govtechmy/myds-react/button';
+import { Tag } from '@govtechmy/myds-react/tag';
+import { SummaryList, SummaryListBody, SummaryListRow, SummaryListTerm, SummaryListDetail } from '@govtechmy/myds-react/summary-list';
 
 interface ProjectDetailsProps {
   project: Transaction;
@@ -20,28 +23,15 @@ const ProjectDetails: React.FC<ProjectDetailsProps> = ({ project, onBack }) => {
     }).format(amount);
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'Completed': return 'bg-green-100 text-green-800';
-      case 'In Progress': return 'bg-yellow-100 text-yellow-800';
-      case 'Planned': return 'bg-blue-100 text-blue-800';
-      case 'Cancelled': return 'bg-red-100 text-red-800';
-      default: return 'bg-gray-100 text-gray-800';
-    }
-  };
-
   const progressPercentage = (project.amountSpent / project.budgetAllocated) * 100;
 
   return (
     <div className="bg-gray-50 p-6 space-y-6">
       {/* Header */}
       <div className="flex items-center space-x-4 mb-6">
-        <button
-          onClick={onBack}
-          className="p-2 hover:bg-gray-200 rounded-full transition-colors"
-        >
-          <ArrowLeft className="h-6 w-6 text-gray-700" />
-        </button>
+        <Button onClick={onBack} variant="default-ghost" iconOnly>
+          <ArrowBackIcon />
+        </Button>
         <div>
           <h1 className="text-3xl font-bold text-gray-800">Project Details</h1>
           <p className="text-gray-600">Detailed information and blockchain verification</p>
@@ -52,40 +42,47 @@ const ProjectDetails: React.FC<ProjectDetailsProps> = ({ project, onBack }) => {
         {/* Main Content */}
         <div className="lg:col-span-2 space-y-8">
           {/* Project Info */}
-          <div className="bg-white rounded-lg shadow-sm p-8">
+          <div className="bg-white rounded-lg shadow-card p-8">
             <div className="flex justify-between items-start mb-4">
               <h2 className="text-2xl font-bold text-gray-800">{project.projectName}</h2>
-              <span className={`inline-flex px-3 py-1 text-sm font-semibold rounded-full ${getStatusColor(project.status)}`}>
+              <Tag
+                variant={
+                  project.status === 'Completed' ? 'success' :
+                  project.status === 'In Progress' ? 'warning' :
+                  project.status === 'Planned' ? 'primary' :
+                  'danger'
+                }
+              >
                 {project.status}
-              </span>
+              </Tag>
             </div>
             
             <p className="text-gray-600 mb-8">{project.description}</p>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
               <div className="flex items-start">
-                <MapPin className="h-6 w-6 mr-4 text-gray-400" />
+                <MapIcon className="h-6 w-6 mr-4 text-gray-400" />
                 <div>
                   <p className="text-sm text-gray-500">Location</p>
                   <p className="font-semibold text-gray-700">{project.location}</p>
                 </div>
               </div>
               <div className="flex items-start">
-                <Calendar className="h-6 w-6 mr-4 text-gray-400" />
+                <CalendarIcon className="h-6 w-6 mr-4 text-gray-400" />
                 <div>
                   <p className="text-sm text-gray-500">Start Date</p>
                   <p className="font-semibold text-gray-700">{new Date(project.date).toLocaleDateString()}</p>
                 </div>
               </div>
               <div className="flex items-start">
-                <DollarSign className="h-6 w-6 mr-4 text-gray-400" />
+                <MoneyIcon className="h-6 w-6 mr-4 text-gray-400" />
                 <div>
                   <p className="text-sm text-gray-500">Department</p>
                   <p className="font-semibold text-gray-700">{project.department}</p>
                 </div>
               </div>
               <div className="flex items-start">
-                <Hash className="h-6 w-6 mr-4 text-gray-400" />
+                <InfoIcon className="h-6 w-6 mr-4 text-gray-400" />
                 <div>
                   <p className="text-sm text-gray-500">Project ID</p>
                   <p className="font-semibold text-gray-700">{project.id}</p>
@@ -117,9 +114,9 @@ const ProjectDetails: React.FC<ProjectDetailsProps> = ({ project, onBack }) => {
                     <code className="text-sm bg-white px-3 py-1 rounded-md border border-gray-300 font-mono text-gray-700">
                       {project.blockchainHash}
                     </code>
-                    <button className="p-2 text-blue-600 hover:bg-blue-100 rounded-full">
-                      <ExternalLink className="h-5 w-5" />
-                    </button>
+                    <Button variant="default-ghost" iconOnly>
+                      <LinkIcon />
+                    </Button>
                   </div>
                 </div>
                 <div className="flex items-center justify-between">
@@ -129,7 +126,7 @@ const ProjectDetails: React.FC<ProjectDetailsProps> = ({ project, onBack }) => {
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium text-gray-600">Status:</span>
                   <span className="text-sm font-semibold text-green-600 flex items-center">
-                    <CheckCircle className="h-4 w-4 mr-1.5" /> Verified
+                    <CheckCircleIcon className="h-4 w-4 mr-1.5" /> Verified
                   </span>
                 </div>
               </div>
@@ -137,14 +134,14 @@ const ProjectDetails: React.FC<ProjectDetailsProps> = ({ project, onBack }) => {
           </div>
 
           {/* Timeline */}
-          <div className="bg-white rounded-lg shadow-sm p-8">
+          <div className="bg-white rounded-lg shadow-card p-8">
             <h3 className="text-xl font-bold text-gray-800 mb-6">Project Timeline</h3>
             <div className="relative">
               <div className="absolute left-2.5 top-0 h-full w-0.5 bg-gray-200"></div>
               <div className="space-y-8">
                 <div className="flex items-start space-x-4">
                   <div className="w-5 h-5 bg-green-500 rounded-full z-10 flex items-center justify-center">
-                    <Check className="h-3 w-3 text-white" />
+                    <CheckIcon className="h-3 w-3 text-white" />
                   </div>
                   <div>
                     <p className="font-semibold text-gray-800">Project Approved</p>
@@ -165,7 +162,7 @@ const ProjectDetails: React.FC<ProjectDetailsProps> = ({ project, onBack }) => {
                 {project.status === 'Completed' && (
                   <div className="flex items-start space-x-4">
                     <div className="w-5 h-5 bg-green-500 rounded-full z-10 flex items-center justify-center">
-                      <Check className="h-3 w-3 text-white" />
+                      <CheckIcon className="h-3 w-3 text-white" />
                     </div>
                     <div>
                       <p className="font-semibold text-gray-800">Project Completed</p>
@@ -182,46 +179,42 @@ const ProjectDetails: React.FC<ProjectDetailsProps> = ({ project, onBack }) => {
         {/* Sidebar */}
         <div className="space-y-8">
           {/* Financial Summary */}
-          <div className="bg-white rounded-lg shadow-sm p-6">
+          <div className="bg-white rounded-lg shadow-card p-6">
             <h3 className="text-xl font-bold text-gray-800 mb-4">Financial Summary</h3>
-            <div className="space-y-3 text-sm">
-              <div className="flex justify-between items-center py-2 border-b">
-                <span className="text-gray-600">Budget Allocated</span>
-                <span className="font-semibold text-gray-800">{formatCurrency(project.budgetAllocated)}</span>
-              </div>
-              <div className="flex justify-between items-center py-2 border-b">
-                <span className="text-gray-600">Amount Spent</span>
-                <span className="font-semibold text-blue-600">{formatCurrency(project.amountSpent)}</span>
-              </div>
-              <div className="flex justify-between items-center py-2 border-b">
-                <span className="text-gray-600">Remaining</span>
-                <span className="font-semibold text-green-600">{formatCurrency(project.remaining)}</span>
-              </div>
-              <div className="flex justify-between items-center pt-2">
-                <span className="text-gray-600">Utilization Rate</span>
-                <span className="font-semibold text-gray-800">{progressPercentage.toFixed(1)}%</span>
-              </div>
-            </div>
+            <SummaryList>
+              <SummaryListBody>
+                <SummaryListRow>
+                  <SummaryListTerm>Budget Allocated</SummaryListTerm>
+                  <SummaryListDetail>{formatCurrency(project.budgetAllocated)}</SummaryListDetail>
+                </SummaryListRow>
+                <SummaryListRow>
+                  <SummaryListTerm>Amount Spent</SummaryListTerm>
+                  <SummaryListDetail>{formatCurrency(project.amountSpent)}</SummaryListDetail>
+                </SummaryListRow>
+                <SummaryListRow>
+                  <SummaryListTerm>Remaining</SummaryListTerm>
+                  <SummaryListDetail>{formatCurrency(project.remaining)}</SummaryListDetail>
+                </SummaryListRow>
+                <SummaryListRow>
+                  <SummaryListTerm>Utilization Rate</SummaryListTerm>
+                  <SummaryListDetail>{progressPercentage.toFixed(1)}%</SummaryListDetail>
+                </SummaryListRow>
+              </SummaryListBody>
+            </SummaryList>
           </div>
 
           {/* Quick Actions */}
-          <div className="bg-white rounded-lg shadow-sm p-6">
+          <div className="bg-white rounded-lg shadow-card p-6">
             <h3 className="text-xl font-bold text-gray-800 mb-4">Quick Actions</h3>
             <div className="space-y-3">
-              <button className="w-full px-4 py-2.5 bg-blue-600 text-white font-semibold rounded-md hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
-                View on Blockchain
-              </button>
-              <button className="w-full px-4 py-2.5 bg-gray-200 text-gray-800 font-semibold rounded-md hover:bg-gray-300 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-400">
-                Download Report
-              </button>
-              <button className="w-full px-4 py-2.5 bg-gray-200 text-gray-800 font-semibold rounded-md hover:bg-gray-300 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-400">
-                Share Project
-              </button>
+              <Button className="w-full" variant="primary-fill">View on Blockchain</Button>
+              <Button className="w-full" variant="default-outline">Download Report</Button>
+              <Button className="w-full" variant="default-outline">Share Project</Button>
             </div>
           </div>
 
           {/* Contact Information */}
-          <div className="bg-white rounded-lg shadow-sm p-6">
+          <div className="bg-white rounded-lg shadow-card p-6">
             <h3 className="text-xl font-bold text-gray-800 mb-4">Contact Information</h3>
             <div className="space-y-4">
               <div>
