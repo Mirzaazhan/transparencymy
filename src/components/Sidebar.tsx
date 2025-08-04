@@ -32,14 +32,13 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, isOpen, onClo
       
       {/* Sidebar */}
       <div className={`
-        fixed left-0 top-16 h-[calc(100vh-4rem)] w-64 bg-white shadow-lg transform transition-transform duration-300 ease-in-out z-50
+        fixed left-0 top-16 h-[calc(100vh-4rem)] w-64 bg-gray-50 border-r border-gray-200 transform transition-transform duration-300 ease-in-out z-50
         md:relative md:top-0 md:h-full md:translate-x-0
         ${isOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
-        <div className="flex justify-between items-center p-4 border-b md:hidden">
-          <h2 className="font-semibold text-gray-800">Menu</h2>
-          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded">
-            <X className="h-5 w-5" />
+        <div className="flex justify-end items-center p-4 border-b md:hidden">
+          <button onClick={onClose} className="p-1 hover:bg-gray-200 rounded">
+            <X className="h-5 w-5 text-gray-600" />
           </button>
         </div>
         
@@ -47,6 +46,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, isOpen, onClo
           <ul className="space-y-2">
             {menuItems.map((item) => {
               const Icon = item.icon;
+              const isActive = activeTab === item.id;
               return (
                 <li key={item.id}>
                   <button
@@ -55,12 +55,12 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, isOpen, onClo
                       onClose();
                     }}
                     className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
-                      activeTab === item.id
-                        ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-700'
-                        : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                      isActive
+                        ? 'bg-blue-600 text-white shadow-sm'
+                        : 'text-gray-700 hover:bg-gray-200 hover:text-gray-900'
                     }`}
                   >
-                    <Icon className="h-5 w-5" />
+                    <Icon className={`h-5 w-5 ${isActive ? 'text-white' : 'text-gray-500'}`} />
                     <span className="font-medium">{item.label}</span>
                   </button>
                 </li>

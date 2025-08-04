@@ -29,18 +29,18 @@ function App() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-100">
       <Header onMenuToggle={() => setSidebarOpen(!sidebarOpen)} />
       
-      <div className="flex">
-        <Sidebar 
-          activeTab={activeTab} 
+      <div className="flex h-[calc(100vh-4rem)]">
+        <Sidebar
+          activeTab={activeTab}
           onTabChange={setActiveTab}
           isOpen={sidebarOpen}
           onClose={() => setSidebarOpen(false)}
         />
         
-        <main className="flex-1 md:ml-64">
+        <main className="flex-1 overflow-y-auto">
           {renderContent()}
         </main>
       </div>
