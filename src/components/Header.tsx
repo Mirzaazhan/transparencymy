@@ -1,53 +1,117 @@
 import React from 'react';
-import { Globe, Shield, Menu } from 'lucide-react';
+import { Globe, LogOut, User } from 'lucide-react';
 import { useLanguage } from '../hooks/useLanguage';
+import logoTm from '../assets/logo-tm.svg';
+import {
+  Navbar,
+  NavbarLogo,
+  NavbarAction,
+  NavbarMenu,
+  NavbarMenuItem,
+} from "@govtechmy/myds-react/navbar";
+import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from '@govtechmy/myds-react/select';
+import { Button, ButtonIcon } from '@govtechmy/myds-react/button';
+import { BarChart3, FileText, Building2, TrendingUp, Settings } from 'lucide-react';
 
-interface HeaderProps {
-  onMenuToggle: () => void;
+interface User {
+  provider: string;
+  role: 'citizen' | 'admin';
 }
 
-const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
-  const { currentLanguage, languages, switchLanguage } = useLanguage();
+interface HeaderProps {
+  activeTab: string;
+  onTabChange: (tab: string) => void;
+  user?: User | null;
+  onLogout?: () => void;
+}
+
+const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange, user, onLogout }) => {
+  const { t, currentLanguage, languages, switchLanguage } = useLanguage();
+
+  const menuItems = [
+    { id: 'dashboard', icon: BarChart3, label: t('nav.dashboard') },
+    { id: 'projects', icon: FileText, label: t('nav.projects') },
+    { id: 'departments', icon: Building2, label: t('nav.departments') },
+    { id: 'analytics', icon: TrendingUp, label: t('nav.analytics') },
+    { id: 'admin', icon: Settings, label: t('nav.admin') }
+  ];
 
   return (
-    <header className="bg-gradient-to-r from-red-600 via-blue-600 to-yellow-500 text-white shadow-lg">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between items-center h-16">
-          <div className="flex items-center">
-            <button
-              onClick={onMenuToggle}
-              className="md:hidden p-2 rounded-md hover:bg-white/10 transition-colors"
+    <Navbar>
+      <div className="flex items-center">
+        <NavbarLogo src={logoTm} alt="TransparensiMY">TransparensiMY</NavbarLogo>
+      </div>
+      <NavbarMenu>
+        {menuItems.map((item) => (
+          <NavbarMenuItem
+            key={item.id}
+            href="#"
+            onClick={(e) => {
+              e.preventDefault();
+              onTabChange(item.id);
+            }}
+            className={activeTab === item.id ? 'bg-blue-100 text-blue-600' : ''}
+          >
+            {item.label}
+          </NavbarMenuItem>
+        ))}
+      </NavbarMenu>
+      <NavbarAction>
+        <div className="flex items-center gap-3">
+          {/* Language Selector */}
+          <div className="hidden sm:block">
+            <Select
+              value={currentLanguage.code}
+              onValueChange={(value) => switchLanguage(value as 'en' | 'ms')}
+              variant="outline"
+              size="small"
             >
-              <Menu className="h-6 w-6" />
-            </button>
-            <div className="flex items-center space-x-3">
-              <Shield className="h-8 w-8" />
-              <div>
-                <h1 className="text-xl font-bold">TransparensiMY</h1>
-                <p className="text-xs opacity-90">Blockchain Government Transparency</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center space-x-4">
-            <div className="flex items-center space-x-2">
-              <Globe className="h-4 w-4" />
-              <select
-                value={currentLanguage.code}
-                onChange={(e) => switchLanguage(e.target.value as 'en' | 'ms')}
-                className="bg-white/10 border border-white/20 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-white/50"
+              <SelectTrigger aria-label="language-selection">
+                <Globe className="h-4 w-4"></Globe>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent
+                align="end"
+                className="font-body rounded-[4px] py-1"
               >
                 {languages.map((lang) => (
-                  <option key={lang.code} value={lang.code} className="text-gray-900">
+                  <SelectItem key={lang.code} value={lang.code}>
                     {lang.name}
-                  </option>
+                  </SelectItem>
                 ))}
-              </select>
-            </div>
+              </SelectContent>
+            </Select>
           </div>
+
+          {/* User Info and Logout */}
+          {user && (
+            <div className="flex items-center gap-2">
+              <div className="hidden md:flex items-center gap-2 text-sm text-support-700">
+                <User className="h-4 w-4" />
+                <span className="capitalize">
+                  {user.role === 'admin' ? t('login.admin') : t('login.citizen')}
+                </span>
+              </div>
+              {onLogout && (
+                <Button
+                  variant="default-outline"
+                  size="small"
+                  onClick={onLogout}
+                  aria-label="Logout"
+                >
+                  <ButtonIcon>
+                    <LogOut className="h-4 w-4" />
+                  </ButtonIcon>
+                  <span className="hidden sm:inline">
+                    {t('nav.logout')}
+                  </span>
+                </Button>
+              )}
+            </div>
+          )}
         </div>
-      </div>
-    </header>
+      </NavbarAction>
+    </Navbar>
   );
 };
 
