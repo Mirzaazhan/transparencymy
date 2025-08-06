@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useLanguage } from '../hooks/useLanguage';
+import { zkLoginService, type OAuthProvider, type ZKLoginState, type LoginResult } from '../services/zklogin';
+import { suiContractsService } from '../services/suiContracts';
 import logoTm from '../assets/logo-tm.svg';
 import { 
   Button, 
@@ -9,44 +11,253 @@ import {
   User, 
   Shield,
   ExternalLink,
-  Loader
+  Loader,
+  CheckCircle,
+  AlertCircle
 } from 'lucide-react';
 
 interface LoginProps {
-  onLogin: (credentials: { provider: string; role: 'citizen' | 'admin' }) => void;
+  onLogin: (loginResult: LoginResult & { role: 'citizen' | 'admin' }) => void;
 }
-
-type OAuthProvider = 'google' | 'facebook' | 'twitch' | 'apple';
 
 const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const { t } = useLanguage();
   const [loginType, setLoginType] = useState<'citizen' | 'admin'>('citizen');
   const [isLoading, setIsLoading] = useState<OAuthProvider | null>(null);
+  const [zkLoginState, setZkLoginState] = useState<ZKLoginState | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  // Initialize ZKLogin state on component mount
+  useEffect(() => {
+    initializeZKLogin();
+    suiContractsService.initializeDemoData();
+  }, []);
+
+  // Handle OAuth callback from URL hash
+  useEffect(() => {
+    const handleOAuthCallback = async () => {
+      const hash = window.location.hash;
+      if (hash.includes('id_token=')) {
+        console.log("🔄 OAuth callback detected in URL hash");
+        setIsLoading('google'); // Show loading state
+        
+        try {
+          const params = new URLSearchParams(hash.substring(1));
+          const idToken = params.get('id_token');
+          const state = params.get('state');
+          
+          console.log("🔍 URL params extracted:", {
+            hasIdToken: !!idToken,
+            hasState: !!state,
+            idTokenLength: idToken?.length,
+            stateLength: state?.length
+          });
+          
+          if (idToken && state) {
+            const stateData = JSON.parse(atob(state));
+            
+            console.log("📋 OAuth state data:", {
+              provider: stateData.provider,
+              sessionId: stateData.sessionId,
+              shortSessionId: stateData.sid,
+              stateDataKeys: Object.keys(stateData)
+            });
+            
+            // Debug localStorage before callback
+            console.log("🔍 LocalStorage before callback:", {
+              totalKeys: Object.keys(localStorage).length,
+              zkloginKeys: Object.keys(localStorage).filter(k => k.startsWith('zklogin_')),
+              targetSession: stateData.sessionId,
+              targetShortSession: stateData.sid
+            });
+            
+            // Try the main session ID first, fallback to short session ID if needed
+            let sessionIdToUse = stateData.sessionId;
+            
+            // If sessionId looks corrupted or truncated, try to find the right one
+            if (!sessionIdToUse || sessionIdToUse.length < 20) {
+              console.log("🔍 Session ID appears corrupted, searching for alternatives...");
+              const availableSessions = Object.keys(localStorage)
+                .filter(k => k.startsWith('zklogin_state_'))
+                .map(k => k.split('_')[2]);
+              
+              // Try to find a session that starts with the short ID
+              if (stateData.sid) {
+                const matchingSession = availableSessions.find(s => s.startsWith(stateData.sid));
+                if (matchingSession) {
+                  sessionIdToUse = matchingSession;
+                  console.log("🎯 Found matching session:", sessionIdToUse);
+                }
+              }
+            }
+            
+            console.log("🔍 Using session ID:", sessionIdToUse);
+            
+            // Get login result from ZKLogin service
+            const loginResult = await zkLoginService.handleOAuthCallback(
+              idToken,
+              stateData.provider,
+              sessionIdToUse
+            );
+
+            console.log("👤 User info from login:", {
+              email: loginResult.userInfo.email,
+              name: loginResult.userInfo.name,
+              requestedRole: loginType
+            });
+
+            // **CRITICAL FIX**: Verify role BEFORE setting user role
+            let verifiedRole: 'citizen' | 'admin' = 'citizen'; // Default to citizen
+
+            if (loginType === 'admin') {
+              console.log("🔍 Verifying admin credentials...");
+              
+              // Check if user has government email
+              const isGovOfficial = verifyGovernmentEmail(loginResult.userInfo.email);
+              
+              if (!isGovOfficial) {
+                console.error("❌ Admin access denied - not a government email:", loginResult.userInfo.email);
+                setError(`Access denied: Government email required for admin access. You signed in with: ${loginResult.userInfo.email}`);
+                setIsLoading(null);
+                return;
+              }
+
+              // Additional verification through contracts service
+              try {
+                const contractVerification = await suiContractsService.verifyGovernmentRole(loginResult);
+                if (!contractVerification) {
+                  console.error("❌ Contract verification failed for admin access");
+                  setError('Access denied: Unable to verify government credentials');
+                  setIsLoading(null);
+                  return;
+                }
+              } catch (error) {
+                console.error("❌ Error during contract verification:", error);
+                // Continue with email verification as fallback
+                console.log("⚠️ Using email verification as fallback");
+              }
+
+              verifiedRole = 'admin';
+              console.log("✅ Admin access granted for:", loginResult.userInfo.email);
+            } else {
+              verifiedRole = 'citizen';
+              console.log("✅ Citizen access granted");
+            }
+
+            // Store login state in localStorage for session persistence
+            const sessionData = {
+              ...loginResult,
+              role: verifiedRole,
+              loginTime: new Date().toISOString()
+            };
+
+            localStorage.setItem('zklogin_session', JSON.stringify(sessionData));
+
+            console.log("🎉 Login successful:", {
+              userAddress: loginResult.userAddress,
+              role: verifiedRole,
+              email: loginResult.userInfo.email
+            });
+
+            onLogin({ ...loginResult, role: verifiedRole });
+            
+            // Clean up URL
+            window.history.replaceState({}, document.title, window.location.pathname);
+          }
+        } catch (error) {
+          console.error('OAuth callback error:', error);
+          setError(`Authentication failed: ${error.message}`);
+        } finally {
+          setIsLoading(null);
+        }
+      }
+    };
+
+    handleOAuthCallback();
+  }, [zkLoginState, loginType, onLogin]);
+
+  /**
+   * Verify if email belongs to Malaysian government domain
+   */
+  const verifyGovernmentEmail = (email?: string): boolean => {
+    if (!email) {
+      console.error("❌ No email provided for government verification");
+      return false;
+    }
+
+    const allowedGovDomains = [
+      'gov.my',
+      'digital.gov.my',
+      'mosti.gov.my',
+      'treasury.gov.my',
+      'mof.gov.my',
+      'pmo.gov.my',
+      'parlimen.gov.my',
+      'finance.gov.my',
+      'health.gov.my',
+      'education.gov.my',
+      'works.gov.my',
+      'transport.gov.my',
+      // Add more Malaysian government domains as needed
+      
+      // For hackathon demo - allow some test domains
+      'example.gov.my',
+      'demo.gov.my'
+    ];
+
+    const emailDomain = email.toLowerCase().split('@')[1];
+    const isGovEmail = allowedGovDomains.includes(emailDomain);
+
+    console.log("🔍 Government email verification:", {
+      email: email,
+      domain: emailDomain,
+      isGovernment: isGovEmail,
+      allowedDomains: allowedGovDomains.slice(0, 5) // Show first 5 for logging
+    });
+
+    return isGovEmail;
+  };
+
+  const initializeZKLogin = async () => {
+    try {
+      setError(null);
+      const state = await zkLoginService.initializeZKLogin();
+      setZkLoginState(state);
+      console.log("✅ ZKLogin state initialized successfully");
+    } catch (error) {
+      console.error('Failed to initialize ZKLogin:', error);
+      setError('Failed to initialize authentication system. Please refresh and try again.');
+    }
+  };
 
   const handleOAuthLogin = async (provider: OAuthProvider) => {
+    if (!zkLoginState) {
+      setError('Authentication system not ready. Please refresh and try again.');
+      return;
+    }
+
     setIsLoading(provider);
-    
+    setError(null);
+
     try {
-      // TODO: Implement actual ZKLogin OAuth flow
-      // This will involve:
-      // 1. Generate ephemeral key pair
-      // 2. Generate nonce
-      // 3. Redirect to OAuth provider
-      // 4. Handle OAuth callback
-      // 5. Generate ZK proof
-      // 6. Derive Sui address
+      console.log("🚀 Starting OAuth login with existing session:", {
+        provider,
+        sessionId: zkLoginState.sessionId,
+        hasEphemeralKeyPair: !!zkLoginState.ephemeralKeyPair,
+        requestedRole: loginType
+      });
       
-      // For now, simulate the flow
-      setTimeout(() => {
-        onLogin({ 
-          provider, 
-          role: loginType 
-        });
-        setIsLoading(null);
-      }, 2000);
+      // IMPORTANT: Use the existing zkLoginState directly, don't create a copy
+      // This ensures we use the same session ID that was stored
+      const authUrl = zkLoginService.getOAuthUrl(provider, zkLoginState);
       
+      console.log("🔗 OAuth URL generated, redirecting to:", provider);
+      
+      // Redirect to OAuth provider
+      window.location.href = authUrl;
     } catch (error) {
       console.error('OAuth login failed:', error);
+      setError(`Failed to start authentication: ${error.message}`);
       setIsLoading(null);
     }
   };
@@ -81,7 +292,9 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
           />
         </svg>
       ),
-      description: t('login.googleDescription'),
+      description: loginType === 'admin' 
+        ? 'Must use government Google account (@gov.my)' 
+        : 'Secure and private authentication',
       available: true,
     },
     {
@@ -92,31 +305,11 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
           <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
         </svg>
       ),
-      description: t('login.facebookDescription'),
+      description: loginType === 'admin' 
+        ? 'Alternative government authentication (@gov.my required)' 
+        : 'Connect with your Facebook account',
       available: true,
-    },
-    {
-      id: 'twitch',
-      name: 'Twitch',
-      icon: (
-        <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M11.571 4.714h1.715v5.143H11.57zm4.715 0H18v5.143h-1.714zM6 0L1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143l-3.428 3.428h-3.429l-3 3v-3H6.857V1.714h13.714Z"/>
-        </svg>
-      ),
-      description: t('login.twitchDescription'),
-      available: true,
-    },
-    {
-      id: 'apple',
-      name: 'Apple',
-      icon: (
-        <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/>
-        </svg>
-      ),
-      description: t('login.appleDescription'),
-      available: true,
-    },
+    }
   ];
 
   return (
@@ -138,6 +331,42 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
             {t('login.zkLoginSubtitle')}
           </p>
         </div>
+
+        {/* Error Message */}
+        {error && (
+          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="h-4 w-4 text-red-500 mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="text-sm text-red-700">{error}</p>
+                <button 
+                  onClick={() => {
+                    setError(null);
+                    initializeZKLogin();
+                  }}
+                  className="mt-2 text-xs text-red-600 hover:text-red-800 underline"
+                >
+                  Try Again
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ZKLogin Status Indicator */}
+        {zkLoginState && (
+          <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+            <div className="flex items-center gap-2 text-sm text-green-700">
+              <CheckCircle className="h-4 w-4" />
+              ZKLogin system ready (Epoch: {zkLoginState.currentEpoch})
+              {zkLoginState.sessionId && (
+                <span className="text-xs text-green-600">
+                  • Session: {zkLoginState.sessionId.slice(0, 8)}...
+                </span>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Login Type Selector */}
         <div className="flex mb-6 bg-support-100 p-1 rounded-lg">
@@ -178,7 +407,10 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
               {loginType === 'citizen' ? t('login.citizenAccess') : t('login.adminAccess')}
             </h2>
             <p className="text-sm text-support-600 mt-1">
-              {t('login.zkLoginDescription')}
+              {loginType === 'admin' 
+                ? 'Government officials only - requires @gov.my email domain'
+                : 'Anonymous and secure authentication for Malaysian citizens'
+              }
             </p>
           </div>
           
@@ -191,7 +423,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                 variant={isLoading === provider.id ? "primary-fill" : "default-outline"}
                 size="medium"
                 onClick={() => handleOAuthLogin(provider.id)}
-                disabled={!provider.available || isLoading !== null}
+                disabled={!provider.available || isLoading !== null || !zkLoginState}
                 className="w-full justify-start text-left"
               >
                 <ButtonIcon>
@@ -216,16 +448,31 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
               </Button>
             ))}
 
+            {/* Admin Access Requirements */}
+            {loginType === 'admin' && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                <h3 className="text-sm font-medium text-amber-900 mb-2">
+                  Government Official Requirements
+                </h3>
+                <ul className="text-xs text-amber-800 space-y-1">
+                  <li>• Valid @gov.my, @digital.gov.my, or ministry email address</li>
+                  <li>• Email domain verification will be performed</li>
+                  <li>• Department verification through blockchain</li>
+                  <li>• All actions will be logged and auditable</li>
+                </ul>
+              </div>
+            )}
+
             {/* How ZKLogin Works */}
             <div className="bg-support-50 border border-support-200 rounded-lg p-4 mt-6">
               <h3 className="text-sm font-medium text-support-950 mb-2">
                 {t('login.howItWorks')}
               </h3>
               <ul className="text-xs text-support-600 space-y-1">
-                <li>• {t('login.step1')}</li>
-                <li>• {t('login.step2')}</li>
-                <li>• {t('login.step3')}</li>
-                <li>• {t('login.step4')}</li>
+                <li>• Your identity remains private and anonymous</li>
+                <li>• Zero-knowledge proof verifies your authenticity</li>
+                <li>• No personal data stored on blockchain</li>
+                <li>• Cryptographic signatures ensure security</li>
               </ul>
             </div>
 
@@ -234,24 +481,36 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
               <p className="text-xs text-blue-700 text-center">
                 <span className="inline-flex items-center gap-1">
                   <Shield className="h-3 w-3" />
-                  {t('login.securityNotice')}
+                  {loginType === 'citizen' 
+                    ? 'Your identity is protected by zero-knowledge cryptography'
+                    : 'Government access is verified by email domain and blockchain'
+                  }
                 </span>
+              </p>
+            </div>
+
+            {/* Demo Notice */}
+            <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
+              <p className="text-xs text-purple-700 text-center">
+                🚀 <strong>Hackathon Demo:</strong> Using testnet. For demo: use @demo.gov.my email
               </p>
             </div>
 
             {/* Help Links */}
             <div className="text-center text-sm space-y-1 pt-2">
               <a 
-                href="#zklogin-info" 
+                href="https://docs.sui.io/concepts/cryptography/zklogin" 
+                target="_blank"
+                rel="noopener noreferrer"
                 className="text-primary-600 hover:text-primary-700 block"
               >
-                {t('login.learnMoreZKLogin')}
+                Learn more about ZKLogin →
               </a>
               <a 
                 href="#help" 
                 className="text-support-600 hover:text-support-700"
               >
-                {t('login.needHelp')}
+                Need help? Contact support
               </a>
             </div>
           </div>
@@ -259,7 +518,8 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
         {/* Footer */}
         <div className="text-center mt-8 text-xs text-support-500">
-          <p>{t('login.footer')}</p>
+          <p>Built with Sui ZKLogin • Malaysian Government Design System • Blockchain for Good</p>
+          <p className="mt-1">© 2025 TransparensiMY - Hackathon Demo</p>
         </div>
       </div>
     </div>
