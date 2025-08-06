@@ -55,6 +55,7 @@ class ZKLoginService {
   private readonly redirectUrl: string;
   private readonly mystenProvingServiceUrl: string;
   private readonly enableRealZKLogin: boolean;
+  private pendingProofRequests: Map<string, Promise<ZKProof>> = new Map(); // Add deduplication cache
 
   constructor() {
     this.suiClient = new SuiClient({
@@ -72,7 +73,7 @@ class ZKLoginService {
       "https://prover-dev.mystenlabs.com/v1";
 
     this.enableRealZKLogin =
-      import.meta.env.VITE_ENABLE_REAL_ZKLOGIN === "true" && false; // Temporarily disable for demo
+      import.meta.env.VITE_ENABLE_REAL_ZKLOGIN === "true";
   }
 
   /**
@@ -85,55 +86,68 @@ class ZKLoginService {
   }
 
   /**
-   * Store ephemeral keypair in localStorage with retry mechanism
+   * Store ephemeral keypair in localStorage with enhanced validation
    */
   private storeEphemeralKeyPair(keypair: Ed25519Keypair, sessionId: string): void {
     try {
-      // Get the raw secret key (32 bytes) instead of the full secret key (70 bytes)
-      const fullSecretKey = keypair.getSecretKey();
-      const secretKey = Array.from(fullSecretKey.slice(0, 32)); // Take only first 32 bytes
+      // For Ed25519Keypair, we need to access the internal keypair data
+      // The getSecretKey() returns a Bech32 string, but we need the raw bytes
+      // Let's use a different approach - serialize the keypair properly
+      
+      const secretKeyBech32 = keypair.getSecretKey();
+      
+      // Create a new keypair from the secret key to test if it works
+      const testKeypair = Ed25519Keypair.fromSecretKey(secretKeyBech32);
+      const originalPublicKey = keypair.getPublicKey().toSuiAddress();
+      const testPublicKey = testKeypair.getPublicKey().toSuiAddress();
+      
+      if (originalPublicKey !== testPublicKey) {
+        throw new Error(`Keypair serialization test failed: original ${originalPublicKey} != test ${testPublicKey}`);
+      }
       
       const keyKey = `zklogin_ephemeral_${sessionId}`;
-      const keyJson = JSON.stringify(secretKey);
       
       console.log("🔍 Storing keypair:", {
-        fullSecretKeyLength: fullSecretKey.length,
-        secretKeyLength: secretKey.length,
-        sessionId
+        secretKeyFormat: 'bech32',
+        sessionId,
+        publicKey: originalPublicKey
       });
       
-      // Store in both localStorage and sessionStorage for redundancy
-      localStorage.setItem(keyKey, keyJson);
-      sessionStorage.setItem(keyKey, keyJson);
+      // Store the Bech32 secret key directly - this is the standard format
+      localStorage.setItem(keyKey, secretKeyBech32);
+      sessionStorage.setItem(keyKey, secretKeyBech32);
       
-      // Verify storage immediately
+      // Verify storage immediately by attempting to restore
       const verification = localStorage.getItem(keyKey);
       if (!verification) {
         throw new Error("Failed to verify keypair storage in localStorage");
       }
       
-      // Test restoration to ensure it works
-      const testSecretKey = new Uint8Array(JSON.parse(verification));
-      const testKeypair = Ed25519Keypair.fromSecretKey(testSecretKey);
+      // Test restoration to ensure it works and produces the same public key
+      const restoredKeypair = Ed25519Keypair.fromSecretKey(verification);
+      const restoredPublicKey = restoredKeypair.getPublicKey().toSuiAddress();
+      
+      if (originalPublicKey !== restoredPublicKey) {
+        throw new Error(`Keypair restoration test failed: original ${originalPublicKey} != restored ${restoredPublicKey}`);
+      }
       
       console.log("🔒 Ephemeral keypair stored and verified successfully:", {
         sessionId,
         keyKey,
-        originalLength: fullSecretKey.length,
-        storedLength: secretKey.length,
-        restoredLength: testSecretKey.length,
-        storageSize: keyJson.length,
+        storageFormat: 'bech32',
+        storageSize: secretKeyBech32.length,
         verified: !!verification,
-        testRestoration: !!testKeypair
+        publicKeyMatch: originalPublicKey === restoredPublicKey,
+        publicKey: originalPublicKey
       });
     } catch (error) {
       console.error("❌ Failed to store ephemeral keypair:", error);
-      throw new Error("Failed to store authentication session");
+      throw new Error(`Failed to store authentication session: ${error.message}`);
     }
   }
 
   /**
-   * Restore ephemeral keypair from localStorage with fallback to sessionStorage
+   * Restore ephemeral keypair from localStorage with enhanced validation
    */
   private restoreEphemeralKeyPair(sessionId: string): Ed25519Keypair | null {
     try {
@@ -158,24 +172,15 @@ class ZKLoginService {
       });
       
       if (stored) {
-        const secretKeyArray = JSON.parse(stored);
-        const secretKey = new Uint8Array(secretKeyArray);
+        // Try to restore from the stored key (now Bech32 format)
+        const keypair = Ed25519Keypair.fromSecretKey(stored);
+        const publicKey = keypair.getPublicKey().toSuiAddress();
         
-        console.log("🔍 Secret key details:", {
-          arrayLength: secretKeyArray.length,
-          uint8ArrayLength: secretKey.length,
-          expectedLength: 32
-        });
-        
-        if (secretKey.length !== 32) {
-          throw new Error(`Invalid secret key length: expected 32, got ${secretKey.length}`);
-        }
-        
-        const keypair = Ed25519Keypair.fromSecretKey(secretKey);
         console.log("✅ Ephemeral keypair successfully restored:", { 
           sessionId, 
           storageType,
-          secretKeyLength: secretKey.length 
+          storageFormat: 'bech32',
+          publicKey
         });
         return keypair;
       } else {
@@ -242,102 +247,20 @@ class ZKLoginService {
   private restoreZKLoginState(sessionId: string): ZKLoginState | null {
     try {
       console.log("🔍 Attempting to restore session:", sessionId);
-      
-      // Get all available sessions for debugging
-      const allLocalKeys = Object.keys(localStorage).filter(key => key.startsWith('zklogin_'));
-      const allSessionKeys = Object.keys(sessionStorage).filter(key => key.startsWith('zklogin_'));
-      const allAvailableSessions = [
-        ...allLocalKeys.filter(k => k.includes('state_')).map(k => k.split('_')[2]),
-        ...allSessionKeys.filter(k => k.includes('state_')).map(k => k.split('_')[2])
-      ].filter(Boolean);
-      
-      console.log("🔍 Storage availability:", {
-        localStorageKeys: allLocalKeys.length,
-        sessionStorageKeys: allSessionKeys.length,
-        targetSessionId: sessionId,
-        allAvailableSessions: allAvailableSessions.slice(0, 5)
-      });
-      
-      // Try exact match first
       const stateKey = `zklogin_state_${sessionId}`;
-      let stored = localStorage.getItem(stateKey);
-      let storageType = 'localStorage';
-      
-      // Fallback to sessionStorage if localStorage fails
-      if (!stored) {
-        stored = sessionStorage.getItem(stateKey);
-        storageType = 'sessionStorage';
-        console.log("🔄 Fallback to sessionStorage for state recovery");
-      }
-      
-      // If exact sessionId not found, try aggressive session search
-      if (!stored && allAvailableSessions.length > 0) {
-        console.log("🔍 Exact session not found, trying all available sessions...");
-        
-        // Try the most recent sessions first (last few in the list)
-        const recentSessions = allAvailableSessions.slice(-5).reverse(); // Last 5 sessions, newest first
-        
-        for (const trySessionId of recentSessions) {
-          if (trySessionId === sessionId) continue; // Skip the one we already tried
-          
-          console.log("🎯 Trying alternative session:", trySessionId);
-          
-          const tryStateKey = `zklogin_state_${trySessionId}`;
-          let tryStored = localStorage.getItem(tryStateKey) || sessionStorage.getItem(tryStateKey);
-          
-          if (tryStored) {
-            // Also check if the keypair exists for this session
-            const tryKeypair = this.restoreEphemeralKeyPair(trySessionId);
-            if (tryKeypair) {
-              console.log("✅ Found working session:", trySessionId);
-              stored = tryStored;
-              sessionId = trySessionId; // Update to use the working session ID
-              storageType = localStorage.getItem(tryStateKey) ? 'localStorage' : 'sessionStorage';
-              break;
-            } else {
-              console.log("❌ Session has state but no keypair:", trySessionId);
-            }
-          }
-        }
-      }
-      
-      console.log("🔍 Final state storage check:", {
-        stateKey: `zklogin_state_${sessionId}`,
-        hasStoredState: !!stored,
-        storedLength: stored?.length,
-        storageType,
-        finalSessionId: sessionId
-      });
-      
+      const stored = localStorage.getItem(stateKey) || sessionStorage.getItem(stateKey);
+
       if (stored) {
         const state = JSON.parse(stored);
-        console.log("📋 Parsed state:", {
-          hasRandomness: !!state.randomness,
-          hasUserSalt: !!state.userSalt,
-          hasNonce: !!state.nonce,
-          maxEpoch: state.maxEpoch,
-          sessionId: state.sessionId,
-          finalSessionUsed: sessionId
-        });
-        
         const ephemeralKeyPair = this.restoreEphemeralKeyPair(sessionId);
-        
         if (ephemeralKeyPair) {
           console.log("✅ ZKLogin state successfully restored for session:", sessionId);
-          return {
-            ...state,
-            ephemeralKeyPair,
-            sessionId: sessionId, // Ensure we use the working session ID
-          };
-        } else {
-          console.error("❌ Could not restore ephemeral keypair for session:", sessionId);
-          return null;
+          return { ...state, ephemeralKeyPair };
         }
-      } else {
-        console.error("❌ No stored state found after trying all sessions. Searched:", sessionId);
-        console.error("❌ Available sessions:", allAvailableSessions.slice(0, 10));
-        return null;
       }
+      
+      console.error("❌ No stored state found for session:", sessionId);
+      return null;
     } catch (error) {
       console.error("❌ Failed to restore ZKLogin state:", error);
       return null;
@@ -431,10 +354,13 @@ class ZKLoginService {
     console.log("🔐 Generated nonce for session:", {
       sessionId,
       nonce: nonce.slice(0, 10) + "...",
+      fullNonce: nonce, // Log full nonce for debugging
       maxEpoch,
-      randomness: randomness.slice(0, 10) + "..."
+      randomness: randomness.slice(0, 10) + "...",
+      ephemeralPublicKey: ephemeralKeyPair.getPublicKey().toSuiAddress()
     });
     
+    // Ensure the state is stored with the updated nonce
     this.storeZKLoginState(state);
 
     // Create a compact state parameter to avoid truncation by OAuth providers
@@ -528,17 +454,46 @@ class ZKLoginService {
         exp: decodedJWT.exp,
       });
 
-      // Verify that the nonce in the JWT matches what we generated
-      if (zkLoginState.nonce && decodedJWT.nonce !== zkLoginState.nonce) {
-        console.error("❌ Nonce mismatch:", {
-          expected: zkLoginState.nonce,
-          received: decodedJWT.nonce,
-          sessionUsed: zkLoginState.sessionId
+      // Verify nonce matches what we computed - this is critical for security
+      const jwtNonce = decodedJWT.nonce;
+      const storedNonce = zkLoginState.nonce;
+      
+      // Also recompute the nonce to double-check our parameters are correct
+      const recomputedNonce = generateNonce(
+        zkLoginState.ephemeralKeyPair.getPublicKey(),
+        zkLoginState.maxEpoch!,
+        zkLoginState.randomness!
+      );
+
+      console.log("🔍 Comprehensive nonce verification:", {
+        jwtNonce,
+        storedNonce,
+        recomputedNonce,
+        jwtMatchesStored: jwtNonce === storedNonce,
+        jwtMatchesRecomputed: jwtNonce === recomputedNonce,
+        storedMatchesRecomputed: storedNonce === recomputedNonce,
+        maxEpoch: zkLoginState.maxEpoch,
+        randomness: zkLoginState.randomness,
+        ephemeralPublicKey: zkLoginState.ephemeralKeyPair.getPublicKey().toSuiAddress()
+      });
+
+      // Verify that the JWT nonce matches our stored nonce
+      if (jwtNonce !== storedNonce) {
+        console.error("❌ Nonce mismatch detected:", {
+          expected: storedNonce,
+          received: jwtNonce,
+          recomputed: recomputedNonce
         });
-        throw new Error(`Nonce mismatch: expected ${zkLoginState.nonce}, got ${decodedJWT.nonce}`);
+        throw new Error(`Nonce verification failed. Expected: ${storedNonce}, Got: ${jwtNonce}`);
       }
 
-      console.log("✅ JWT nonce verification passed");
+      // Additional verification: make sure we can recompute the same nonce
+      if (storedNonce !== recomputedNonce) {
+        console.error("❌ Stored nonce doesn't match recomputed nonce - state corruption detected");
+        throw new Error("Authentication state corruption detected. Please restart login process.");
+      }
+
+      console.log("✅ Nonce verification passed successfully");
 
       // Generate user address using the proper zkLogin method
       const addressSeed = genAddressSeed(
@@ -592,19 +547,70 @@ class ZKLoginService {
   }
 
   /**
-   * Generate ZK proof using Mysten Labs' proving service - NO NONCE VERIFICATION
+   * Generate ZK proof using Mysten Labs' proving service with proper parameter validation
    */
   private async generateZKProofWithMysten(
     jwt: string,
     zkLoginState: ZKLoginState
   ): Promise<ZKProof> {
+    // Create a cache key based on JWT to prevent duplicate submissions
+    const jwtHash = btoa(jwt).slice(-16); // Use last 16 chars of base64 encoded JWT as cache key
+    
+    // Check if we already have a pending request for this JWT
+    if (this.pendingProofRequests.has(jwtHash)) {
+      console.log("🔄 Reusing pending proof request for JWT:", jwtHash);
+      return this.pendingProofRequests.get(jwtHash)!;
+    }
+
+    // Create the proof request promise
+    const proofPromise = this.performZKProofRequest(jwt, zkLoginState);
+    
+    // Cache the promise to prevent duplicates
+    this.pendingProofRequests.set(jwtHash, proofPromise);
+    
     try {
-      // Verify we have all required parameters
+      const result = await proofPromise;
+      // Clear from cache after completion
+      this.pendingProofRequests.delete(jwtHash);
+      return result;
+    } catch (error) {
+      // Clear from cache on error
+      this.pendingProofRequests.delete(jwtHash);
+      throw error;
+    }
+  }
+
+  /**
+   * Perform the actual ZK proof request to Mysten's service
+   */
+  private async performZKProofRequest(
+    jwt: string,
+    zkLoginState: ZKLoginState
+  ): Promise<ZKProof> {
+    try {
       if (!zkLoginState.ephemeralKeyPair || !zkLoginState.maxEpoch || !zkLoginState.randomness || !zkLoginState.userSalt) {
         throw new Error("Missing required ZKLogin state parameters");
       }
 
-      // Get the extended ephemeral public key
+      // Validate that our nonce computation is consistent
+      const jwtDecoded = jwtDecode(jwt) as any;
+      const jwtNonce = jwtDecoded.nonce;
+      const recomputedNonce = generateNonce(
+        zkLoginState.ephemeralKeyPair.getPublicKey(),
+        zkLoginState.maxEpoch,
+        zkLoginState.randomness
+      );
+
+      if (jwtNonce !== recomputedNonce) {
+        console.error("❌ Nonce mismatch before proving service call:", {
+          jwtNonce,
+          recomputedNonce,
+          maxEpoch: zkLoginState.maxEpoch,
+          randomness: zkLoginState.randomness
+        });
+        throw new Error(`Nonce verification failed before proving service. JWT: ${jwtNonce}, Computed: ${recomputedNonce}`);
+      }
+
       const extendedEphemeralPublicKey = Array.from(
         zkLoginState.ephemeralKeyPair.getPublicKey().toSuiBytes()
       );
@@ -617,54 +623,47 @@ class ZKLoginService {
         salt: zkLoginState.userSalt,
         keyClaimName: "sub",
       };
-  
-      console.log("📡 Calling Mysten Labs proving service with params:", {
-        jwtLength: jwt.length,
+
+      console.log("🔍 Proving service request details:", {
+        jwtNonce,
+        recomputedNonce,
+        nonceMatch: jwtNonce === recomputedNonce,
+        maxEpoch: zkLoginState.maxEpoch,
+        randomness: zkLoginState.randomness,
+        salt: zkLoginState.userSalt,
         extendedEphemeralPublicKeyLength: extendedEphemeralPublicKey.length,
-        maxEpoch: requestBody.maxEpoch,
-        jwtRandomness: requestBody.jwtRandomness.slice(0, 10) + "...",
-        salt: requestBody.salt.slice(0, 10) + "...",
-        keyClaimName: requestBody.keyClaimName
+        ephemeralPublicKey: zkLoginState.ephemeralKeyPair.getPublicKey().toSuiAddress()
       });
-
-      // Get nonces for informational purposes only - no validation
-      const computedNonce = generateNonce(
-        zkLoginState.ephemeralKeyPair.getPublicKey(),
-        zkLoginState.maxEpoch,
-        zkLoginState.randomness
-      );
-
-      const jwtNonce = (jwtDecode(jwt) as any).nonce;
-
-      console.log("🔍 Nonce info (no validation):", {
-        storedNonce: zkLoginState.nonce?.slice(0, 10) + "..." || "undefined",
-        computedNonce: computedNonce.slice(0, 10) + "...",
-        jwtNonce: jwtNonce.slice(0, 10) + "...",
-        note: "Proceeding with API call regardless of matches"
-      });
-
-      // ALWAYS proceed with API call - let Mysten service handle all validation
+  
       console.log("🚀 Sending request to Mysten proving service...");
       
       const response = await fetch(this.mystenProvingServiceUrl, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(requestBody),
       });
   
       if (!response.ok) {
         const errorText = await response.text();
+        
+        // Handle rate limiting specifically
+        if (response.status === 429) {
+          console.warn("⚠️ Rate limited by proving service. This is normal during development.");
+          console.warn("💡 The same JWT was submitted multiple times within 5 seconds.");
+          console.warn("🔄 Wait a few seconds and try again, or the app may retry automatically.");
+        }
+        
         console.error("❌ Mysten proving service error response:", {
           status: response.status,
           statusText: response.statusText,
-          errorText: errorText
+          errorText: errorText,
+          isRateLimit: response.status === 429,
+          requestBody: {
+            ...requestBody,
+            jwt: "***REDACTED***" // Don't log sensitive JWT
+          }
         });
-        
-        throw new Error(
-          `Mysten proving service error: ${response.status} - ${errorText}`
-        );
+        throw new Error(`Mysten proving service error: ${response.status} - ${errorText}`);
       }
   
       const zkProof = await response.json();
@@ -795,6 +794,60 @@ class ZKLoginService {
   }
 
   /**
+   * Debug utility: Check current session state
+   */
+  debugSessionState(sessionId?: string): void {
+    console.log("🐛 Debug: Checking session state...");
+    
+    if (sessionId) {
+      const state = this.restoreZKLoginState(sessionId);
+      console.log("🐛 Specific session state:", {
+        sessionId,
+        found: !!state,
+        hasEphemeralKey: !!state?.ephemeralKeyPair,
+        hasRandomness: !!state?.randomness,
+        hasNonce: !!state?.nonce,
+        maxEpoch: state?.maxEpoch,
+        publicKey: state?.ephemeralKeyPair?.getPublicKey().toSuiAddress()
+      });
+    }
+    
+    // Check all available sessions
+    const allKeys = Object.keys(localStorage).filter(k => k.startsWith('zklogin_'));
+    const stateKeys = allKeys.filter(k => k.includes('state_'));
+    const keypairKeys = allKeys.filter(k => k.includes('ephemeral_'));
+    
+    console.log("🐛 All available sessions:", {
+      totalZKLoginKeys: allKeys.length,
+      stateKeys: stateKeys.length,
+      keypairKeys: keypairKeys.length,
+      sessionIds: stateKeys.map(k => k.split('_')[2]).slice(0, 5), // Show first 5
+    });
+    
+    // Check if we can regenerate nonce for any session
+    stateKeys.slice(0, 3).forEach(stateKey => {
+      try {
+        const sessionId = stateKey.split('_')[2];
+        const state = this.restoreZKLoginState(sessionId);
+        if (state && state.ephemeralKeyPair && state.maxEpoch && state.randomness) {
+          const recomputedNonce = generateNonce(
+            state.ephemeralKeyPair.getPublicKey(),
+            state.maxEpoch,
+            state.randomness
+          );
+          console.log(`🐛 Session ${sessionId.slice(0, 8)}... nonce check:`, {
+            storedNonce: state.nonce?.slice(0, 10) + "...",
+            recomputedNonce: recomputedNonce.slice(0, 10) + "...",
+            match: state.nonce === recomputedNonce
+          });
+        }
+      } catch (error) {
+        console.log(`🐛 Error checking session ${stateKey}:`, error.message);
+      }
+    });
+  }
+
+  /**
    * Get current epoch from Sui network
    */
   private async getCurrentEpoch(): Promise<number> {
@@ -818,7 +871,9 @@ class ZKLoginService {
       saltBigInt = saltBigInt * BigInt(256) + BigInt(randomBytes[i]);
     }
 
-    return saltBigInt.toString();
+    const salt = saltBigInt.toString();
+    console.log("🧂 Generated user salt:", salt.slice(0, 8) + "...");
+    return salt;
   }
 
   /**
@@ -886,6 +941,23 @@ class ZKLoginService {
       apple: "email name",
     };
     return scopes[provider];
+  }
+
+  /**
+   * Debug utility: Clear all zkLogin sessions
+   */
+  clearAllSessions(): void {
+    console.log("🧹 Clearing all zkLogin sessions...");
+    const allKeys = Object.keys(localStorage).filter(k => k.startsWith('zklogin_'));
+    const sessionKeys = Object.keys(sessionStorage).filter(k => k.startsWith('zklogin_'));
+    
+    allKeys.forEach(key => localStorage.removeItem(key));
+    sessionKeys.forEach(key => sessionStorage.removeItem(key));
+    
+    console.log("🧹 Cleared sessions:", {
+      localStorage: allKeys.length,
+      sessionStorage: sessionKeys.length
+    });
   }
 }
 

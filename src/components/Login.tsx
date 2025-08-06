@@ -166,7 +166,19 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
           }
         } catch (error) {
           console.error('OAuth callback error:', error);
-          setError(`Authentication failed: ${error.message}`);
+          
+          // Handle rate limiting errors more gracefully
+          if (error.message.includes('429') || error.message.includes('TooManyRequestsError')) {
+            setError(`Rate limited by proving service. Please wait a few seconds and try again.`);
+            
+            // Auto-retry after 6 seconds for rate limit errors
+            setTimeout(() => {
+              console.log("🔄 Auto-retrying after rate limit...");
+              window.location.reload();
+            }, 6000);
+          } else {
+            setError(`Authentication failed: ${error.message}`);
+          }
         } finally {
           setIsLoading(null);
         }
