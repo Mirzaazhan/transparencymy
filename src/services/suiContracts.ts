@@ -69,7 +69,7 @@ class SuiContractsService {
     this.suiClient = new SuiClient({
       url: import.meta.env.VITE_SUI_RPC_URL || 'https://fullnode.testnet.sui.io:443'
     });
-    this.packageId = import.meta.env.VITE_SUI_PACKAGE_ID || '';
+    this.packageId = import.meta.env.VITE_SUI_PACKAGE_ID || '0x0dadc397dc7d65a5d92c5b8cae6d85c2647355bd09ea677b12751bbaeef5fc48';
     this.enableRealBlockchain = import.meta.env.VITE_ENABLE_REAL_BLOCKCHAIN === 'true';
   }
 

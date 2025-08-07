@@ -12,34 +12,61 @@ import {
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from '@govtechmy/myds-react/select';
 import { Button, ButtonIcon } from '@govtechmy/myds-react/button';
 import { BarChart3, FileText, Building2, TrendingUp, Settings } from 'lucide-react';
+import { LoginResult } from '../services/zklogin';
 
-interface User {
-  provider: string;
+// Extended user type
+type UserSession = LoginResult & { 
   role: 'citizen' | 'admin';
-}
+  loginTime: string;
+};
 
 interface HeaderProps {
   activeTab: string;
   onTabChange: (tab: string) => void;
-  user?: User | null;
-  onLogout?: () => void;
+  user: UserSession | null;
+  onLogout: () => void;
 }
 
 const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange, user, onLogout }) => {
   const { t, currentLanguage, languages, switchLanguage } = useLanguage();
 
-  const menuItems = [
-    { id: 'dashboard', icon: BarChart3, label: t('nav.dashboard') },
-    { id: 'projects', icon: FileText, label: t('nav.projects') },
-    { id: 'departments', icon: Building2, label: t('nav.departments') },
-    { id: 'analytics', icon: TrendingUp, label: t('nav.analytics') },
-    { id: 'admin', icon: Settings, label: t('nav.admin') }
-  ];
+  // Define menu items based on user role
+  const getMenuItems = () => {
+    if (!user) return [];
+
+    const baseItems = [
+      { id: 'dashboard', icon: BarChart3, label: user.role === 'citizen' ? 'Projects' : t('nav.dashboard') },
+      { id: 'analytics', icon: TrendingUp, label: t('nav.analytics') },
+    ];
+
+    if (user.role === 'admin') {
+      return [
+        { id: 'dashboard', icon: BarChart3, label: t('nav.dashboard') },
+        { id: 'projects', icon: FileText, label: t('nav.projects') },
+        { id: 'departments', icon: Building2, label: t('nav.departments') },
+        { id: 'analytics', icon: TrendingUp, label: t('nav.analytics') },
+        { id: 'admin', icon: Settings, label: t('nav.admin') }
+      ];
+    }
+
+    // For citizens, show simplified menu
+    return [
+      { id: 'dashboard', icon: FileText, label: 'Government Projects' },
+      { id: 'analytics', icon: TrendingUp, label: 'Analytics' }
+    ];
+  };
+
+  const menuItems = getMenuItems();
 
   return (
     <Navbar>
       <div className="flex items-center">
-        <NavbarLogo src={logoTm} alt="TransparensiMY">TransparensiMY</NavbarLogo>
+        <NavbarLogo src={logoTm} alt="TransparensiMY">
+          TransparensiMY
+          {user?.role === 'citizen' && (
+            <span className="text-sm text-gray-500 ml-2">Citizen Portal</span>
+          )}
+        </NavbarLogo>
       </div>
       <NavbarMenu>
         {menuItems.map((item) => (
@@ -58,6 +85,18 @@ const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange, user, onLogout 
       </NavbarMenu>
       <NavbarAction>
         <div className="flex items-center gap-3">
+          {/* Blockchain Status */}
+          {user && (
+            <div className="hidden lg:flex items-center space-x-2 text-xs text-gray-500">
+              <div className={`w-2 h-2 rounded-full ${
+                import.meta.env.VITE_ENABLE_REAL_BLOCKCHAIN === 'true' ? 'bg-green-400' : 'bg-blue-400'
+              }`}></div>
+              <span>
+                {import.meta.env.VITE_ENABLE_REAL_BLOCKCHAIN === 'true' ? 'Live Blockchain' : 'Demo Mode'}
+              </span>
+            </div>
+          )}
+
           {/* Language Selector */}
           <div className="hidden sm:block">
             <Select
@@ -86,27 +125,27 @@ const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange, user, onLogout 
           {/* User Info and Logout */}
           {user && (
             <div className="flex items-center gap-2">
-              <div className="hidden md:flex items-center gap-2 text-sm text-support-700">
-                <User className="h-4 w-4" />
-                <span className="capitalize">
-                  {user.role === 'admin' ? t('login.admin') : t('login.citizen')}
-                </span>
+              <div className="hidden md:flex flex-col items-end text-sm">
+                <div className="text-gray-900 font-medium">
+                  {user.userInfo.name || 'User'}
+                </div>
+                <div className="text-xs text-gray-500">
+                  {user.role === 'admin' ? '👑 Admin' : '👤 Citizen'} • {user.userAddress.slice(0, 6)}...{user.userAddress.slice(-4)}
+                </div>
               </div>
-              {onLogout && (
-                <Button
-                  variant="default-outline"
-                  size="small"
-                  onClick={onLogout}
-                  aria-label="Logout"
-                >
-                  <ButtonIcon>
-                    <LogOut className="h-4 w-4" />
-                  </ButtonIcon>
-                  <span className="hidden sm:inline">
-                    {t('nav.logout')}
-                  </span>
-                </Button>
-              )}
+              <Button
+                variant="default-outline"
+                size="small"
+                onClick={onLogout}
+                aria-label="Logout"
+              >
+                <ButtonIcon>
+                  <LogOut className="h-4 w-4" />
+                </ButtonIcon>
+                <span className="hidden sm:inline">
+                  {t('nav.logout')}
+                </span>
+              </Button>
             </div>
           )}
         </div>
