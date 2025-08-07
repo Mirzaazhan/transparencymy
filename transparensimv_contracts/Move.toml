@@ -1,0 +1,13 @@
+[package]
+name = "transparensimv_contracts"
+edition = "2024.alpha"  # Changed from "legacy" to "2024.alpha"
+
+[dependencies]
+Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "testnet" }
+
+[addresses]
+transparency = "0x0"
+
+[dev-dependencies]
+
+[dev-addresses]
