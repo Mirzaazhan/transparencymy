@@ -18,7 +18,24 @@ const ADMIN_SECRET_KEY = process.env.ADMIN_SECRET_KEY;
 const suiClient = new SuiClient({ url: SUI_FULLNODE_URL });
 
 // Create a keypair from the admin's secret key
-const adminKeypair = Ed25519Keypair.fromSecretKey(Buffer.from(ADMIN_SECRET_KEY, 'base64'));
+// const adminKeypair = Ed25519Keypair.fromSecretKey(Buffer.from(ADMIN_SECRET_KEY, 'base64'));
+
+// --- MODIFIED: Conditionally create the admin keypair ---
+let adminKeypair; // Declare the variable
+
+if (ADMIN_SECRET_KEY) {
+  try {
+    // This code will only run if the key exists in your .env file
+    adminKeypair = Ed25519Keypair.fromSecretKey(Buffer.from(ADMIN_SECRET_KEY, 'base64'));
+    console.log("✅ Admin keypair loaded successfully. API write operations enabled.");
+  } catch (error) {
+    console.error("❌ ERROR: ADMIN_SECRET_KEY is invalid. Check your .env file. Write operations disabled.", error);
+  }
+} else {
+  // This is the message you will see
+  console.warn("⚠️ WARNING: ADMIN_SECRET_KEY not found in .env. API write operations will be disabled.");
+}
+// --- END OF MODIFICATION ---
 
 // =================================================================
 // WRITE Endpoints (Interacting with Sui Blockchain)
@@ -127,6 +144,9 @@ router.post('/transactions/pay', async (req, res) => {
     }
 });
 
+// // --- ADD A MOCK RESPONSE ---
+// console.log("SUI LOGIC SKIPPED: Would have published budget:", { title, totalAllocation });
+// res.json({ success: true, message: "Mock Success: Transaction not sent." });
 
 // =================================================================
 // READ Endpoints (Querying MongoDB)

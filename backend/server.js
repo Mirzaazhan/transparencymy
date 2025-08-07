@@ -4,7 +4,7 @@ import express from 'express';
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import cors from 'cors';
-import apiRoutes from '../api.js';
+import apiRoutes from './api.js';
 
 dotenv.config();
 
