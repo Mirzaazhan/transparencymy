@@ -4,13 +4,10 @@ import { SuiClient } from '@mysten/sui.js/client';
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 
-// Import your Mongoose schemas
-import GovernmentBody from './models/GovernmentBody.js';
-import Budget from './models/Budget.js';
-import Project from './models/Project.js';
-import Transaction from './models/Transaction.js';
-// We might need the Vendor model if we have a VendorRegistered event
-import Vendor from './models/Vendor.js';
+// Import your NEW Mongoose schemas
+import GovernmentOfficial from './models/GovernmentOffical.js';
+import SpendingRecord from './models/SpendingRecord.js';
+import CitizenFeedback from './models/CitizenFeedback.js';
 
 dotenv.config();
 
@@ -19,92 +16,83 @@ const SUI_FULLNODE_URL = process.env.SUI_FULLNODE_URL;
 const MONGO_URI = process.env.MONGO_URI;
 const PACKAGE_ID = process.env.SUI_PACKAGE_ID;
 
-// --- EVENT HANDLERS ---
-// Each function handles a specific event type from your smart contract
+// --- EVENT HANDLERS (Matched to transparency.move) ---
 
-async function handleBudgetPublished(payload) {
-  console.log('Handling BudgetPublished event:', payload);
+async function handleOfficialRegistered(payload) {
+  console.log('Handling OfficialRegistered event:', payload);
   try {
-    // Find the GovernmentBody document using its Sui object ID
-    const issuingBody = await GovernmentBody.findOne({ sui_object_id: payload.government_body_id });
-    if (!issuingBody) {
-      console.error(`ERROR: Government body with Sui ID ${payload.government_body_id} not found in DB.`);
-      return;
-    }
-
-    await Budget.create({
-      sui_object_id: payload.budget_id, // This is the new Budget object created on-chain
-      issuing_body: issuingBody._id,
-      title: payload.title,
-      total_allocation: Number(payload.total_allocation),
-      year: Number(payload.year),
-      sdg_focus: Number(payload.sdg_focus),
-      source_document_url: payload.source_document_url,
-    });
-    console.log(`✅ Successfully indexed new Budget: ${payload.title}`);
+    await GovernmentOfficial.findOneAndUpdate(
+      { official_address: payload.official_address },
+      {
+        department: payload.department,
+        email_domain: payload.email_domain,
+        registered_at: new Date(Number(payload.timestamp) * 1000) // Convert epoch seconds to Date
+      },
+      { upsert: true, new: true }
+    );
+    console.log(`✅ Successfully indexed Government Official: ${payload.official_address}`);
   } catch (err) {
-    console.error('Error processing BudgetPublished:', err);
+    console.error('Error processing OfficialRegistered:', err);
   }
 }
 
-async function handleProjectAwarded(payload) {
-  console.log('Handling ProjectAwarded event:', payload);
+async function handleSpendingRecordCreated(payload) {
+  console.log('Handling SpendingRecordCreated event:', payload);
   try {
-    const budget = await Budget.findOne({ sui_object_id: payload.budget_id });
-    const vendor = await Vendor.findOne({ wallet_address: payload.vendor_wallet });
-
-    if (!budget || !vendor) {
-      console.error('ERROR: Could not find prerequisite Budget or Vendor in DB for project award.');
+    const official = await GovernmentOfficial.findOne({ official_address: payload.submitter });
+    if (!official) {
+      console.error(`ERROR: Submitting official ${payload.submitter} not found. Record for "${payload.project_name}" will not be created.`);
       return;
     }
 
-    await Project.create({
-      sui_object_id: payload.project_id, // The new Project object ID
-      budget: budget._id,
-      title: payload.title,
-      description: payload.description,
-      status: 'In Progress',
-      awarded_amount: Number(payload.awarded_amount),
-      awarded_to_vendor: vendor._id,
-      tender_documents_url: payload.tender_documents_url,
+    // The event payload is simpler than the full struct, so we only save what we get.
+    // The other fields (description, etc.) would need to be fetched separately if needed.
+    await SpendingRecord.create({
+      sui_object_id: payload.record_id,
+      department: payload.department,
+      project_name: payload.project_name,
+      allocated_amount: Number(payload.allocated_amount),
+      spent_amount: Number(payload.spent_amount),
+      // Fields not in the event are omitted or defaulted
+      date: new Date(Number(payload.timestamp) * 1000).toISOString().split('T')[0],
+      status: 0, // Default to 'planned' as it's not in the event
+      submitter: official._id, // Link to our official's MongoDB ID
+      created_at: new Date(Number(payload.timestamp) * 1000),
     });
-    console.log(`✅ Successfully indexed new Project: ${payload.title}`);
+    console.log(`✅ Successfully indexed new Spending Record: ${payload.project_name}`);
   } catch (err) {
-    console.error('Error processing ProjectAwarded:', err);
+    console.error('Error processing SpendingRecordCreated:', err);
   }
 }
 
-async function handlePaymentMade(event) {
-    const payload = event.parsedJson;
-    console.log('Handling PaymentMade event:', payload);
-    try {
-        const project = await Project.findOne({ sui_object_id: payload.project_id });
-        // The recipient is implicit in the project, but we can find them for the record
-        const vendor = await Vendor.findById(project.awarded_to_vendor);
-
-        if (!project || !vendor) {
-            console.error('ERROR: Could not find prerequisite Project or Vendor in DB for payment.');
-            return;
-        }
-
-        await Transaction.create({
-            sui_transaction_hash: event.id.txDigest, // This is the unique hash of the transaction
-            project: project._id,
-            recipient_vendor: vendor._id,
-            amount: Number(payload.amount),
-            timestamp: new Date(parseInt(event.timestampMs)),
-            milestone_description: payload.milestone_description,
-            invoice_url: payload.invoice_url,
-        });
-        console.log(`✅ Successfully indexed payment of ${payload.amount} for project ${project.title}`);
-    } catch (err) {
-        console.error('Error processing PaymentMade:', err);
+async function handleFeedbackSubmitted(payload) {
+  console.log('Handling FeedbackSubmitted event:', payload);
+  try {
+    const spendingRecord = await SpendingRecord.findOne({ sui_object_id: payload.project_id });
+    if (!spendingRecord) {
+        console.error(`ERROR: SpendingRecord with ID ${payload.project_id} not found. Feedback will not be saved.`);
+        return;
     }
+    
+    await CitizenFeedback.create({
+        sui_object_id: payload.feedback_id,
+        spending_record: spendingRecord._id, // Link to the MongoDB SpendingRecord
+        project_id_string: payload.project_id,
+        rating: Number(payload.rating),
+        message_hash: "omitted", // The message hash is not in the FeedbackSubmitted event struct.
+        is_anonymous: payload.is_anonymous,
+        submitter_address: payload.submitter,
+        created_at: new Date(Number(payload.timestamp) * 1000),
+    });
+    console.log(`✅ Successfully indexed new Feedback for project: ${spendingRecord.project_name}`);
+  } catch (err) {
+    console.error('Error processing FeedbackSubmitted:', err);
+  }
 }
-
 
 // --- MAIN INDEXER LOGIC ---
 async function startIndexer() {
+  // ... (Your existing startIndexer connection logic is perfect) ...
   console.log('Connecting to MongoDB...');
   await mongoose.connect(MONGO_URI);
   console.log('MongoDB connected.');
@@ -112,22 +100,20 @@ async function startIndexer() {
   const suiClient = new SuiClient({ url: SUI_FULLNODE_URL });
   console.log(`Connecting to Sui Full Node at ${SUI_FULLNODE_URL}...`);
 
-  // Subscribe to all events from our specific package
   const unsubscribe = await suiClient.subscribeEvent({
     filter: { Package: PACKAGE_ID },
     onData: (event) => {
       console.log(`--- New Sui Event Received --- Type: ${event.type} ---`);
       
-      // The event type is formatted as: `PACKAGE_ID::MODULE_NAME::EVENT_NAME`
-      // We check for the event name at the end.
-      if (event.type.endsWith('::BudgetPublished')) {
-        handleBudgetPublished(event.parsedJson);
-      } else if (event.type.endsWith('::ProjectAwarded')) {
-        handleProjectAwarded(event.parsedJson);
-      } else if (event.type.endsWith('::PaymentMade')) {
-        handlePaymentMade(event); // Pass the whole event to get the digest and timestamp
+      const moduleName = '::transparency::'; // From your contract: module transparency::transparency
+      
+      if (event.type.endsWith(moduleName + 'OfficialRegistered')) {
+        handleOfficialRegistered(event.parsedJson);
+      } else if (event.type.endsWith(moduleName + 'SpendingRecordCreated')) {
+        handleSpendingRecordCreated(event.parsedJson);
+      } else if (event.type.endsWith(moduleName + 'FeedbackSubmitted')) {
+        handleFeedbackSubmitted(event.parsedJson);
       }
-      // Add more `else if` blocks for other events like `VendorRegistered`, etc.
     },
     onError: (err) => {
       console.error('Sui subscription error:', err);
@@ -135,16 +121,7 @@ async function startIndexer() {
   });
 
   console.log('🚀 Indexer is now listening for Sui events...');
-
-  process.on('SIGINT', async () => {
-    console.log('Shutting down indexer...');
-    await unsubscribe();
-    await mongoose.disconnect();
-    console.log('Disconnected.');
-    process.exit(0);
-  });
+  process.on('SIGINT', async () => { /* ...graceful shutdown... */ });
 }
 
 startIndexer().catch(console.error);
-
-export { handleBudgetPublished, handleProjectAwarded, handlePaymentMade };

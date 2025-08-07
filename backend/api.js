@@ -1,242 +1,145 @@
+// file: api.js
+
 import express from 'express';
 import { SuiClient } from '@mysten/sui.js/client';
-import { Ed25519Keypair } from '@mysten/sui.js/keypairs/ed25519';
-import { TransactionBlock } from '@mysten/sui.js/transactions';
 
-// Mongoose models for reading data
-import Project from './models/Project.js';
-import Budget from './models/Budget.js';
-import Transaction from './models/Transaction.js';
+// Import your NEW Mongoose models, which match the smart contract
+import GovernmentOfficial from './models/GovernmentOffical.js';
+import SpendingRecord from './models/SpendingRecord.js';
+import CitizenFeedback from './models/CitizenFeedback.js';
+import dotenv from 'dotenv';
 
 const router = express.Router();
+dotenv.config();
 
 // --- CONFIGURATION ---
+// The API only needs the RPC URL to talk to the Sui network.
 const SUI_FULLNODE_URL = process.env.SUI_FULLNODE_URL;
-const SUI_PACKAGE_ID = process.env.SUI_PACKAGE_ID;
-const ADMIN_SECRET_KEY = process.env.ADMIN_SECRET_KEY;
+
+// This check ensures the server doesn't start with an invalid configuration.
+if (!SUI_FULLNODE_URL) {
+  throw new Error("SUI_FULLNODE_URL is not defined in the .env file. The API cannot start.");
+}
 
 const suiClient = new SuiClient({ url: SUI_FULLNODE_URL });
 
-// Create a keypair from the admin's secret key
-// const adminKeypair = Ed25519Keypair.fromSecretKey(Buffer.from(ADMIN_SECRET_KEY, 'base64'));
-
-// --- MODIFIED: Conditionally create the admin keypair ---
-let adminKeypair; // Declare the variable
-
-if (ADMIN_SECRET_KEY) {
-  try {
-    // This code will only run if the key exists in your .env file
-    adminKeypair = Ed25519Keypair.fromSecretKey(Buffer.from(ADMIN_SECRET_KEY, 'base64'));
-    console.log("✅ Admin keypair loaded successfully. API write operations enabled.");
-  } catch (error) {
-    console.error("❌ ERROR: ADMIN_SECRET_KEY is invalid. Check your .env file. Write operations disabled.", error);
-  }
-} else {
-  // This is the message you will see
-  console.warn("⚠️ WARNING: ADMIN_SECRET_KEY not found in .env. API write operations will be disabled.");
-}
-// --- END OF MODIFICATION ---
 
 // =================================================================
-// WRITE Endpoints (Interacting with Sui Blockchain)
+// WRITE Endpoint (Proxy for zkLogin Signed Transactions)
 // =================================================================
 
-// Endpoint to publish a new budget
-router.post('/budgets', async (req, res) => {
+/**
+ * Receives a pre-built and signed transaction from a zkLogin user (admin or citizen)
+ * and executes it on their behalf. The backend's role is to be a "gas station"
+ * or proxy, it does not sign anything itself.
+ */
+router.post('/execute-transaction', async (req, res) => {
   try {
-    const { governmentBodySuiId, title, totalAllocation, year, sdgFocus, sourceDocumentUrl } = req.body;
+    // The frontend sends the raw transaction bytes and the complete zkLogin signature
+    const { tx_bytes, zk_signature } = req.body;
 
-    // TODO: A real app would get the governmentBodySuiId from an authenticated session
-    
-    // Step 1: Create a new Transaction Block
-    const tx = new TransactionBlock();
+    if (!tx_bytes || !zk_signature) {
+      return res.status(400).json({
+        success: false,
+        message: "Request must include 'tx_bytes' and 'zk_signature'."
+      });
+    }
 
-    // Step 2: Add the smart contract call to the transaction block
-    tx.moveCall({
-      target: `${SUI_PACKAGE_ID}::transparensi::publish_budget`, // Replace 'transparensi' with your module name
-      arguments: [
-        tx.object(governmentBodySuiId),
-        tx.pure(title),
-        tx.pure(totalAllocation),
-        tx.pure(year),
-        tx.pure(sdgFocus),
-        tx.pure(sourceDocumentUrl),
-      ],
+    console.log("Receiving and proxying a pre-signed zkLogin transaction...");
+
+    // The backend's only job is to submit the transaction to the network.
+    // The signature and the transaction logic were all created on the frontend.
+    const result = await suiClient.executeTransactionBlock({
+      transactionBlock: tx_bytes,
+      signature: zk_signature,
+      options: {
+        showEffects: true,
+      },
     });
 
-    // Step 3: Sign and execute the transaction
-    const result = await suiClient.signAndExecuteTransactionBlock({
-      signer: adminKeypair,
-      transactionBlock: tx,
-      options: { showEvents: true }, // Important for debugging
-    });
+    console.log("Transaction executed successfully on behalf of user. Digest:", result.digest);
 
-    res.json({ success: true, digest: result.digest });
+    // Respond with 202 (Accepted) to indicate the transaction was submitted.
+    // The frontend should not assume the data is saved until the indexer processes the event.
+    res.status(202).json({ success: true, message: "Transaction accepted by the network.", digest: result.digest });
 
   } catch (error) {
-    console.error('Failed to publish budget:', error);
-    res.status(500).json({ success: false, message: error.message });
+    console.error('Failed to execute pre-signed transaction:', error);
+    const errorMessage = error.message || "An unknown error occurred.";
+    res.status(500).json({ success: false, message: errorMessage });
   }
 });
 
-// Endpoint to award a project
-router.post('/projects/award', async (req, res) => {
-    try {
-        const { budgetSuiId, title, description, awardedAmount, vendorWallet, tenderDocumentsUrl } = req.body;
-
-        const tx = new TransactionBlock();
-        tx.moveCall({
-            target: `${SUI_PACKAGE_ID}::transparensi::award_project`,
-            arguments: [
-                tx.object(budgetSuiId),
-                tx.pure(title),
-                tx.pure(description),
-                tx.pure(awardedAmount),
-                tx.pure(vendorWallet),
-                tx.pure(tenderDocumentsUrl),
-            ]
-        });
-
-        const result = await suiClient.signAndExecuteTransactionBlock({
-            signer: adminKeypair,
-            transactionBlock: tx,
-            options: { showEvents: true },
-        });
-
-        res.json({ success: true, digest: result.digest });
-    } catch (error) {
-        console.error('Failed to award project:', error);
-        res.status(500).json({ success: false, message: error.message });
-    }
-});
-
-// Endpoint to make a payment to a vendor
-router.post('/transactions/pay', async (req, res) => {
-    try {
-        const { projectSuiId, amount, milestoneDescription, invoiceUrl } = req.body;
-
-        const tx = new TransactionBlock();
-        
-        // This assumes your smart contract handles pulling coins from the project object
-        // and sending them. The 'coins' argument might need to be constructed differently
-        // based on your smart contract's logic.
-        // For simplicity, we assume the contract manages a treasury.
-        tx.moveCall({
-            target: `${SUI_PACKAGE_ID}::transparensi::make_payment`,
-            arguments: [
-                tx.object(projectSuiId),
-                tx.pure(amount),
-                tx.pure(milestoneDescription),
-                tx.pure(invoiceUrl),
-            ]
-        });
-
-        const result = await suiClient.signAndExecuteTransactionBlock({
-            signer: adminKeypair,
-            transactionBlock: tx,
-            options: { showEvents: true },
-        });
-
-        res.json({ success: true, digest: result.digest });
-    } catch (error) {
-        console.error('Failed to make payment:', error);
-        res.status(500).json({ success: false, message: error.message });
-    }
-});
-
-// // --- ADD A MOCK RESPONSE ---
-// console.log("SUI LOGIC SKIPPED: Would have published budget:", { title, totalAllocation });
-// res.json({ success: true, message: "Mock Success: Transaction not sent." });
 
 // =================================================================
-// READ Endpoints (Querying MongoDB)
+// READ Endpoints (Querying MongoDB for a Fast User Experience)
 // =================================================================
 
-// Get all projects with populated details
-router.get('/projects', async (req, res) => {
+/**
+ * GET all spending records.
+ * Populates the 'submitter' with official's details for easy display.
+ */
+router.get('/spending-records', async (req, res) => {
   try {
-    const projects = await Project.find()
-      .populate('budget')
-      .populate('awarded_to_vendor');
-    res.json(projects);
+    const records = await SpendingRecord.find()
+      .populate('submitter', 'official_address department') // Selectively populate fields
+      .sort({ created_at: -1 }); // Show newest records first
+    res.json(records);
   } catch (error) {
+    console.error('Error fetching spending records:', error);
     res.status(500).json({ message: error.message });
   }
 });
 
-// Get a single project and its transactions
-router.get('/projects/:projectId', async (req, res) => {
-  try {
-    const project = await Project.findById(req.params.projectId)
-      .populate('budget')
-      .populate('awarded_to_vendor');
-    
-    if (!project) return res.status(404).json({ message: 'Project not found' });
-    
-    const transactions = await Transaction.find({ project: project._id });
-    
-    res.json({ project, transactions });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
+/**
+ * GET a single spending record by its MongoDB ID.
+ */
+router.get('/spending-records/:id', async (req, res) => {
+    try {
+      const record = await SpendingRecord.findById(req.params.id)
+        .populate('submitter', 'official_address department');
+      
+      if (!record) {
+        return res.status(404).json({ message: 'Spending record not found.' });
+      }
+      res.json(record);
+    } catch (error) {
+      console.error(`Error fetching spending record ${req.params.id}:`, error);
+      res.status(500).json({ message: error.message });
+    }
 });
 
-// This new route handles adding feedback to a specific project
-router.post('/projects/:projectId/feedback', async (req, res) => {
+/**
+ * GET all citizen feedback for a specific spending record (identified by its MongoDB ID).
+ */
+router.get('/spending-records/:id/feedback', async (req, res) => {
     try {
-        const { projectId } = req.params;
-        const { comment_text, sentiment } = req.body;
-        
-        // In a real app, an auth middleware would provide this.
-        // For the hackathon, you can mock it or pass it in the body.
-        const zklogin_address = req.body.zklogin_address || "mock_zklogin_address_" + Math.random();
-
-        if (!comment_text || !sentiment) {
-            return res.status(400).json({ success: false, message: "Comment text and sentiment are required." });
+        const recordExists = await SpendingRecord.countDocuments({ _id: req.params.id });
+        if (recordExists === 0) {
+            return res.status(404).json({ message: 'Spending record not found.' });
         }
 
-        const newFeedback = {
-            comment_text,
-            sentiment,
-            zklogin_address,
-        };
-
-        // Find the project and push the new feedback in one atomic operation
-        const updatedProject = await Project.findByIdAndUpdate(
-            projectId,
-            { $push: { feedbacks: newFeedback } },
-            { new: true } // This option returns the document after the update
-        );
-
-        if (!updatedProject) {
-            return res.status(404).json({ success: false, message: "Project not found." });
-        }
-        
-        // --- Execute the "Auto-Flagging" Business Logic ---
-        if (sentiment === 'negative') {
-            const negativeCommenters = new Set(
-                updatedProject.feedbacks
-                    .filter(fb => fb.sentiment === 'negative')
-                    .map(fb => fb.zklogin_address)
-            );
-
-            // Threshold is 5 unique negative commenters
-            if (negativeCommenters.size > 5) {
-                // Check if status is already flagged to avoid unnecessary DB writes
-                if (updatedProject.status !== 'Flagged') {
-                    updatedProject.status = 'Flagged';
-                    await updatedProject.save();
-                    console.log(`Project ${updatedProject.title} automatically moved to 'Flagged' status.`);
-                }
-            }
-        }
-
-        res.status(201).json({ success: true, data: updatedProject });
-
+        const feedback = await CitizenFeedback.find({ spending_record: req.params.id })
+            .sort({ created_at: -1 });
+            
+        res.json(feedback);
     } catch (error) {
-        console.error('Failed to add feedback:', error);
-        res.status(500).json({ success: false, message: error.message });
+        console.error(`Error fetching feedback for record ${req.params.id}:`, error);
+        res.status(500).json({ message: error.message });
     }
+});
+
+/**
+ * GET all registered government officials.
+ */
+router.get('/officials', async (req, res) => {
+  try {
+    const officials = await GovernmentOfficial.find().sort({ department: 1 });
+    res.json(officials);
+  } catch (error) {
+    console.error('Error fetching officials:', error);
+    res.status(500).json({ message: error.message });
+  }
 });
 
 export default router;
