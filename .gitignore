@@ -27,3 +27,8 @@ docs/
 .env
 .env.example
 .kilocode
+
+# Ignore Rust build output
+target/
+*.tgz
+external-crates/*/target/

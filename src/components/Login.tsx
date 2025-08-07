@@ -63,25 +63,15 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
               stateDataKeys: Object.keys(stateData)
             });
             
-            // Debug localStorage before callback
-            console.log("🔍 LocalStorage before callback:", {
-              totalKeys: Object.keys(localStorage).length,
-              zkloginKeys: Object.keys(localStorage).filter(k => k.startsWith('zklogin_')),
-              targetSession: stateData.sessionId,
-              targetShortSession: stateData.sid
-            });
-            
             // Try the main session ID first, fallback to short session ID if needed
             let sessionIdToUse = stateData.sessionId;
             
-            // If sessionId looks corrupted or truncated, try to find the right one
             if (!sessionIdToUse || sessionIdToUse.length < 20) {
               console.log("🔍 Session ID appears corrupted, searching for alternatives...");
               const availableSessions = Object.keys(localStorage)
                 .filter(k => k.startsWith('zklogin_state_'))
                 .map(k => k.split('_')[2]);
               
-              // Try to find a session that starts with the short ID
               if (stateData.sid) {
                 const matchingSession = availableSessions.find(s => s.startsWith(stateData.sid));
                 if (matchingSession) {
@@ -99,16 +89,14 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
               stateData.provider,
               sessionIdToUse
             );
-
+  
             console.log("👤 User info from login:", {
               email: loginResult.userInfo.email,
               name: loginResult.userInfo.name,
               requestedRole: loginType
             });
-
-            // **CRITICAL FIX**: Verify role BEFORE setting user role
-            let verifiedRole: 'citizen' | 'admin' = 'citizen'; // Default to citizen
-
+  
+            // **CRITICAL FIX**: Verify role BEFORE proceeding
             if (loginType === 'admin') {
               console.log("🔍 Verifying admin credentials...");
               
@@ -119,9 +107,12 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                 console.error("❌ Admin access denied - not a government email:", loginResult.userInfo.email);
                 setError(`Access denied: Government email required for admin access. You signed in with: ${loginResult.userInfo.email}`);
                 setIsLoading(null);
+                
+                // **CRITICAL**: Clean up URL and RETURN early - don't continue execution
+                window.history.replaceState({}, document.title, window.location.pathname);
                 return;
               }
-
+  
               // Additional verification through contracts service
               try {
                 const contractVerification = await suiContractsService.verifyGovernmentRole(loginResult);
@@ -129,36 +120,38 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                   console.error("❌ Contract verification failed for admin access");
                   setError('Access denied: Unable to verify government credentials');
                   setIsLoading(null);
+                  
+                  // **CRITICAL**: Clean up URL and RETURN early
+                  window.history.replaceState({}, document.title, window.location.pathname);
                   return;
                 }
               } catch (error) {
                 console.error("❌ Error during contract verification:", error);
-                // Continue with email verification as fallback
+                // Continue with email verification as fallback for contract issues
                 console.log("⚠️ Using email verification as fallback");
               }
-
-              verifiedRole = 'admin';
+  
               console.log("✅ Admin access granted for:", loginResult.userInfo.email);
-            } else {
-              verifiedRole = 'citizen';
-              console.log("✅ Citizen access granted");
             }
-
+  
+            // If we reach here, the user is authorized for their requested role
+            const verifiedRole: 'citizen' | 'admin' = loginType; // Use the requested role since it's been verified
+  
             // Store login state in localStorage for session persistence
             const sessionData = {
               ...loginResult,
               role: verifiedRole,
               loginTime: new Date().toISOString()
             };
-
+  
             localStorage.setItem('zklogin_session', JSON.stringify(sessionData));
-
+  
             console.log("🎉 Login successful:", {
               userAddress: loginResult.userAddress,
               role: verifiedRole,
               email: loginResult.userInfo.email
             });
-
+  
             onLogin({ ...loginResult, role: verifiedRole });
             
             // Clean up URL
@@ -166,13 +159,28 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
           }
         } catch (error) {
           console.error('OAuth callback error:', error);
-          setError(`Authentication failed: ${error.message}`);
+          
+          // Handle rate limiting errors more gracefully
+          if (error.message.includes('429') || error.message.includes('TooManyRequestsError')) {
+            setError(`Rate limited by proving service. Please wait a few seconds and try again.`);
+            
+            // Auto-retry after 6 seconds for rate limit errors
+            setTimeout(() => {
+              console.log("🔄 Auto-retrying after rate limit...");
+              window.location.reload();
+            }, 6000);
+          } else {
+            setError(`Authentication failed: ${error.message}`);
+          }
+          
+          // **CRITICAL**: Always clean up URL on error
+          window.history.replaceState({}, document.title, window.location.pathname);
         } finally {
           setIsLoading(null);
         }
       }
     };
-
+  
     handleOAuthCallback();
   }, [zkLoginState, loginType, onLogin]);
 
@@ -184,7 +192,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
       console.error("❌ No email provided for government verification");
       return false;
     }
-
+  
     const allowedGovDomains = [
       'gov.my',
       'digital.gov.my',
@@ -198,23 +206,27 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
       'education.gov.my',
       'works.gov.my',
       'transport.gov.my',
-      // Add more Malaysian government domains as needed
+      'kpkt.gov.my',
+      'moh.gov.my',
+      'moe.gov.my',
+      'kementerian.gov.my',
       
-      // For hackathon demo - allow some test domains
+      // For hackathon demo - allow test domains
       'example.gov.my',
-      'demo.gov.my'
+      'demo.gov.my',
+      'test.gov.my'
     ];
-
+  
     const emailDomain = email.toLowerCase().split('@')[1];
     const isGovEmail = allowedGovDomains.includes(emailDomain);
-
+  
     console.log("🔍 Government email verification:", {
       email: email,
       domain: emailDomain,
       isGovernment: isGovEmail,
-      allowedDomains: allowedGovDomains.slice(0, 5) // Show first 5 for logging
+      allowedDomains: allowedGovDomains.slice(0, 5)
     });
-
+  
     return isGovEmail;
   };
 
@@ -333,25 +345,61 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
         </div>
 
         {/* Error Message */}
-        {error && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
-            <div className="flex items-start gap-2">
-              <AlertCircle className="h-4 w-4 text-red-500 mt-0.5 flex-shrink-0" />
-              <div>
-                <p className="text-sm text-red-700">{error}</p>
+        {error && error.includes('Access denied') && (
+        <div className="mb-6 p-4 bg-red-100 border-2 border-red-300 rounded-lg">
+          <div className="flex items-start gap-2">
+            <Shield className="h-5 w-5 text-red-500 mt-0.5 flex-shrink-0" />
+            <div>
+              <h4 className="font-semibold text-red-800">Admin Access Denied</h4>
+              <p className="text-sm text-red-700">{error}</p>
+              <p className="text-xs text-red-600 mt-1">
+                Please use a @gov.my email address or switch to Citizen login.
+              </p>
+              <div className="mt-2 flex gap-2">
+                <button 
+                  onClick={() => {
+                    setError(null);
+                    setLoginType('citizen');
+                  }}
+                  className="text-xs bg-red-50 hover:bg-red-100 text-red-700 px-2 py-1 rounded"
+                >
+                  Switch to Citizen
+                </button>
                 <button 
                   onClick={() => {
                     setError(null);
                     initializeZKLogin();
                   }}
-                  className="mt-2 text-xs text-red-600 hover:text-red-800 underline"
+                  className="text-xs bg-red-50 hover:bg-red-100 text-red-700 px-2 py-1 rounded"
                 >
                   Try Again
                 </button>
               </div>
             </div>
           </div>
-        )}
+        </div>
+      )}
+
+      {/* Regular Error Message - For other errors */}
+      {error && !error.includes('Access denied') && (
+        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+          <div className="flex items-start gap-2">
+            <AlertCircle className="h-4 w-4 text-red-500 mt-0.5 flex-shrink-0" />
+            <div>
+              <p className="text-sm text-red-700">{error}</p>
+              <button 
+                onClick={() => {
+                  setError(null);
+                  initializeZKLogin();
+                }}
+                className="mt-2 text-xs text-red-600 hover:text-red-800 underline"
+              >
+                Try Again
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
         {/* ZKLogin Status Indicator */}
         {zkLoginState && (
