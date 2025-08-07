@@ -161,4 +161,62 @@ router.get('/projects/:projectId', async (req, res) => {
   }
 });
 
+// This new route handles adding feedback to a specific project
+router.post('/projects/:projectId/feedback', async (req, res) => {
+    try {
+        const { projectId } = req.params;
+        const { comment_text, sentiment } = req.body;
+        
+        // In a real app, an auth middleware would provide this.
+        // For the hackathon, you can mock it or pass it in the body.
+        const zklogin_address = req.body.zklogin_address || "mock_zklogin_address_" + Math.random();
+
+        if (!comment_text || !sentiment) {
+            return res.status(400).json({ success: false, message: "Comment text and sentiment are required." });
+        }
+
+        const newFeedback = {
+            comment_text,
+            sentiment,
+            zklogin_address,
+        };
+
+        // Find the project and push the new feedback in one atomic operation
+        const updatedProject = await Project.findByIdAndUpdate(
+            projectId,
+            { $push: { feedbacks: newFeedback } },
+            { new: true } // This option returns the document after the update
+        );
+
+        if (!updatedProject) {
+            return res.status(404).json({ success: false, message: "Project not found." });
+        }
+        
+        // --- Execute the "Auto-Flagging" Business Logic ---
+        if (sentiment === 'negative') {
+            const negativeCommenters = new Set(
+                updatedProject.feedbacks
+                    .filter(fb => fb.sentiment === 'negative')
+                    .map(fb => fb.zklogin_address)
+            );
+
+            // Threshold is 5 unique negative commenters
+            if (negativeCommenters.size > 5) {
+                // Check if status is already flagged to avoid unnecessary DB writes
+                if (updatedProject.status !== 'Flagged') {
+                    updatedProject.status = 'Flagged';
+                    await updatedProject.save();
+                    console.log(`Project ${updatedProject.title} automatically moved to 'Flagged' status.`);
+                }
+            }
+        }
+
+        res.status(201).json({ success: true, data: updatedProject });
+
+    } catch (error) {
+        console.error('Failed to add feedback:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
 export default router;

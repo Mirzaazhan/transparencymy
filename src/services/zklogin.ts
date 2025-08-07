@@ -72,7 +72,7 @@ class ZKLoginService {
       "https://prover-dev.mystenlabs.com/v1";
 
     this.enableRealZKLogin =
-      import.meta.env.VITE_ENABLE_REAL_ZKLOGIN === "true" && false; // Temporarily disable for demo
+      import.meta.env.VITE_ENABLE_REAL_ZKLOGIN === "true"; // Temporarily disable for demo
   }
 
   /**
