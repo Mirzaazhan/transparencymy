@@ -37,7 +37,7 @@ const Admin: React.FC = () => {
 
   const adminSections = [
     { id: 'overview', label: 'Overview', icon: SettingIcon },
-    { id: 'transactions', label: 'Add Transaction', icon: PlusIcon },
+    { id: 'transactions', label: 'Add Budget', icon: PlusIcon },
     { id: 'users', label: 'User Management', icon: UserGroupIcon },
     { id: 'blockchain', label: 'Blockchain Settings', icon: InfoIcon },
     { id: 'data', label: 'Data Management', icon: DatabaseIcon }
@@ -132,7 +132,7 @@ const Admin: React.FC = () => {
 
           {activeSection === 'transactions' && (
             <div className="bg-white rounded-lg shadow-card p-8">
-              <h3 className="text-xl font-bold text-gray-800 mb-6">Add New Transaction</h3>
+              <h3 className="text-xl font-bold text-gray-800 mb-6">Add New Budget</h3>
               <form onSubmit={handleSubmit} className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>

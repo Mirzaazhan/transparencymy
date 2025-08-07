@@ -146,3 +146,5 @@ async function startIndexer() {
 }
 
 startIndexer().catch(console.error);
+
+export { handleBudgetPublished, handleProjectAwarded, handlePaymentMade };
