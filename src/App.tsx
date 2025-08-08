@@ -151,8 +151,8 @@ function App() {
         return <Departments />;
       case 'analytics':
         return <Analytics />;
-      case 'admin':
-        return <Admin />;
+        case 'admin':
+          return <Admin loginResult={user} />;
       default:
         return <BlockchainDashboard loginResult={user} userRole={user.role} />;
     }

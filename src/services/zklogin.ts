@@ -172,16 +172,25 @@ class ZKLoginService {
       });
       
       if (stored) {
-        // Try to restore from the stored key (now Bech32 format)
+        // 🔧 CRITICAL FIX: Recreate Ed25519Keypair from stored secret key
         const keypair = Ed25519Keypair.fromSecretKey(stored);
         const publicKey = keypair.getPublicKey().toSuiAddress();
         
-        console.log("✅ Ephemeral keypair successfully restored:", { 
+        // Verify the keypair has proper methods
+        if (typeof keypair.signTransaction !== 'function') {
+          console.error("❌ Restored keypair missing signTransaction method");
+          throw new Error("Invalid keypair restoration");
+        }
+        
+        console.log("✅ Ephemeral keypair successfully restored with methods:", { 
           sessionId, 
           storageType,
           storageFormat: 'bech32',
-          publicKey
+          publicKey,
+          hasSignMethod: typeof keypair.signTransaction === 'function',
+          hasGetPublicKeyMethod: typeof keypair.getPublicKey === 'function'
         });
+        
         return keypair;
       } else {
         console.error("❌ No stored keypair found for session:", sessionId);
@@ -249,13 +258,31 @@ class ZKLoginService {
       console.log("🔍 Attempting to restore session:", sessionId);
       const stateKey = `zklogin_state_${sessionId}`;
       const stored = localStorage.getItem(stateKey) || sessionStorage.getItem(stateKey);
-
+  
       if (stored) {
         const state = JSON.parse(stored);
+        
+        // 🔧 CRITICAL FIX: Properly restore ephemeral keypair
         const ephemeralKeyPair = this.restoreEphemeralKeyPair(sessionId);
+        
         if (ephemeralKeyPair) {
+          // Verify the keypair is functional
+          if (typeof ephemeralKeyPair.signTransaction !== 'function') {
+            console.error("❌ Restored keypair is not functional");
+            return null;
+          }
+          
           console.log("✅ ZKLogin state successfully restored for session:", sessionId);
+          console.log("✅ Keypair methods verified:", {
+            hasSignTransaction: typeof ephemeralKeyPair.signTransaction === 'function',
+            hasGetPublicKey: typeof ephemeralKeyPair.getPublicKey === 'function',
+            publicKey: ephemeralKeyPair.getPublicKey().toSuiAddress()
+          });
+          
           return { ...state, ephemeralKeyPair };
+        } else {
+          console.error("❌ Could not restore ephemeral keypair for session:", sessionId);
+          return null;
         }
       }
       
@@ -266,6 +293,7 @@ class ZKLoginService {
       return null;
     }
   }
+  
 
   /**
    * Clean up stored session data from both storage types
@@ -702,6 +730,7 @@ class ZKLoginService {
       headerBase64: jwtParts[0]
     };
   }
+  
 
   /**
    * Sign and execute transaction with ZKLogin signature
@@ -711,42 +740,84 @@ class ZKLoginService {
     loginResult: LoginResult
   ) {
     try {
+      console.log("📝 Starting ZKLogin transaction signing process...");
+  
       if (!this.enableRealZKLogin) {
-        // Simulate transaction execution for demo
         return await this.simulateTransactionExecution(txBytes, loginResult);
       }
-
-      if (!loginResult.zkProof) {
-        throw new Error("ZK proof not available for transaction signing");
+  
+      if (!loginResult.zkProof || !loginResult.zkLoginState.ephemeralKeyPair) {
+        throw new Error("Missing ZK proof or ephemeral keypair");
       }
-
-      console.log("📝 Signing transaction with real ZKLogin...");
-
+  
+      console.log("✅ All components verified, proceeding with real ZKLogin signature...");
+  
       // Generate ephemeral signature
-      const ephemeralSignature =
-        await loginResult.zkLoginState.ephemeralKeyPair!.signTransaction(
-          txBytes
-        );
-
-      const userSignature = Array.from(ephemeralSignature.signature).map(
-        (char) => char.charCodeAt(0)
+      const ephemeralSignature = await loginResult.zkLoginState.ephemeralKeyPair.signTransaction(txBytes);
+      console.log("✅ Ephemeral signature generated");
+  
+      // Import required functions
+      const { getZkLoginSignature, genAddressSeed } = await import('@mysten/sui/zklogin');
+      const { jwtDecode } = await import('jwt-decode');
+  
+      // Decode JWT to get original parameters
+      const jwtDecoded = jwtDecode(loginResult.jwt) as any;
+      
+      // 🔧 CRITICAL FIX: Generate address seed exactly as during login
+      const addressSeed = genAddressSeed(
+        loginResult.zkLoginState.userSalt!,
+        "sub",
+        jwtDecoded.sub,
+        jwtDecoded.aud
       );
-
+  
+      console.log("🔍 Signature construction debug:", {
+        addressSeed: addressSeed.toString(),
+        maxEpoch: loginResult.zkLoginState.maxEpoch,
+        userSalt: loginResult.zkLoginState.userSalt?.slice(0, 10) + "...",
+        ephemeralSigLength: ephemeralSignature.signature.length
+      });
+  
+      // 🔧 CRITICAL FIX: Convert ephemeral signature properly
+      // The signature should be converted to byte array, not char codes
+      const userSignature = ephemeralSignature.signature; // don't convert to Array.from
+  
+      console.log("🔍 Signature conversion debug:", {
+        originalSignature: ephemeralSignature.signature.slice(0, 10),
+        convertedLength: userSignature.length,
+        firstFewBytes: userSignature.slice(0, 5)
+      });
+  
+      // 🔧 CRITICAL FIX: Construct ZKLogin signature with exact parameters
+      const zkLoginSignatureInputs = {
+        ...loginResult.zkProof,
+        addressSeed: addressSeed.toString(),
+      };
+  
+      console.log("🔍 ZKLogin inputs validation:", {
+        hasProofPoints: !!zkLoginSignatureInputs.proofPoints,
+        hasIssBase64Details: !!zkLoginSignatureInputs.issBase64Details,
+        hasHeaderBase64: !!zkLoginSignatureInputs.headerBase64,
+        addressSeed: zkLoginSignatureInputs.addressSeed.slice(0, 20) + "..."
+      });
+  
       const zkLoginSignature = getZkLoginSignature({
-        inputs: {
-          ...loginResult.zkProof,
-          addressSeed: genAddressSeed(
-            loginResult.zkLoginState.userSalt!,
-            "sub",
-            loginResult.userInfo.sub,
-            this.getClientId(loginResult.provider)
-          ).toString(),
-        },
+        inputs: zkLoginSignatureInputs,
         maxEpoch: loginResult.zkLoginState.maxEpoch!,
         userSignature: userSignature,
       });
+  
+      console.log("✅ ZKLogin signature constructed successfully");
       
-      // Execute transaction on Sui network
+      // 🔧 ADDITIONAL DEBUG: Log the final signature structure
+      console.log("🔍 Final signature structure:", {
+        signatureType: typeof zkLoginSignature,
+        signatureLength: zkLoginSignature?.length || 'unknown'
+      });
+  
+      // Execute transaction
+      console.log("🚀 Executing transaction on Sui network...");
+      
       const result = await this.suiClient.executeTransactionBlock({
         transactionBlock: txBytes,
         signature: zkLoginSignature,
@@ -757,14 +828,56 @@ class ZKLoginService {
           showBalanceChanges: true,
         },
       });
-
-      console.log("✅ Real transaction executed:", result.digest);
+  
+      console.log("✅ Transaction executed successfully:", {
+        digest: result.digest,
+        status: result.effects?.status
+      });
+  
       return result;
+  
     } catch (error) {
-      console.error("Error signing and executing transaction:", error);
+      console.error("❌ Error signing and executing transaction:", error);
+      
+      // Enhanced debugging for signature issues
+      if (error.message.includes('Invalid signature')) {
+        console.error("🔍 DETAILED SIGNATURE ERROR DEBUG:");
+        
+        // Log all the signature components for debugging
+        console.error("  Login result keys:", Object.keys(loginResult));
+        console.error("  ZKLogin state keys:", Object.keys(loginResult.zkLoginState));
+        console.error("  ZK proof keys:", Object.keys(loginResult.zkProof || {}));
+        
+        if (loginResult.zkProof) {
+          console.error("  Proof points structure:", {
+            hasA: Array.isArray(loginResult.zkProof.proofPoints?.a),
+            hasB: Array.isArray(loginResult.zkProof.proofPoints?.b),
+            hasC: Array.isArray(loginResult.zkProof.proofPoints?.c),
+            aLength: loginResult.zkProof.proofPoints?.a?.length,
+            bLength: loginResult.zkProof.proofPoints?.b?.length,
+            cLength: loginResult.zkProof.proofPoints?.c?.length
+          });
+          
+          console.error("  IssBase64Details:", {
+            hasValue: !!loginResult.zkProof.issBase64Details?.value,
+            hasIndexMod4: typeof loginResult.zkProof.issBase64Details?.indexMod4 === 'number'
+          });
+        }
+        
+        // Try to determine the specific signature issue
+        console.error("💡 Possible causes:");
+        console.error("  1. ZK proof format incorrect");
+        console.error("  2. Ephemeral signature conversion wrong");
+        console.error("  3. Address seed calculation mismatch");
+        console.error("  4. Max epoch validation failed");
+        
+        throw new Error(`ZKLogin signature validation failed. Raw error: ${error.message}`);
+      }
+      
       throw error;
     }
   }
+  
 
   /**
    * Simulate transaction execution for demo
